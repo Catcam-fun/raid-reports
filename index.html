@@ -1,5 +1,196 @@
 <!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>Counted Deaths Report</title></head>
+<html><head><meta charset="utf-8"><title>Counted Deaths Report</title>
+    <style>
+      :root {
+        --bg:#0b0e14; --panel:#11151d; --panel2:#0f1420; --border:#1f2937;
+        --text:#e5e7eb; --muted:#9aa4b2; --link:#93c5fd; --linkhover:#bfdbfe;
+        --goodbg:#063f2e; --good:#34d399; --goodbrd:#065f46;
+        --badbg:#3b0d0d; --bad:#f87171; --badbrd:#7f1d1d;
+        --bossh:#141a29; --totals:#3a2f0a; --totalsbrd:#b45309; --chip:#1f2937; --chipbrd:#374151;
+      }
+      body.light {
+        --bg:#fff; --panel:#f9fafb; --panel2:#fff; --border:#e5e7eb; --text:#111827; --muted:#6b7280;
+        --link:#1d4ed8; --linkhover:#1e40af; --goodbg:#e6ffed; --good:#047857; --goodbrd:#a7f3d0;
+        --badbg:#fee2e2; --bad:#991b1b; --badbrd:#fecaca; --bossh:#eef2ff; --totals:#fef3c7; --totalsbrd:#f59e0b; --chip:#e5e7eb; --chipbrd:#d1d5db;
+      }
+      html,body{margin:0;padding:0}
+      body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;line-height:1.5;padding:24px}
+      .wrap{max-width:1100px;margin:0 auto}
+      h1{margin:0 0 8px}
+      .topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+      .sub{color:var(--muted);margin:6px 0 12px}
+      .toggle,.select,.chip{background:var(--panel);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:8px}
+      .toggle{cursor:pointer}
+      .chip{display:inline-block;text-decoration:none;margin-right:6px}
+      .chip.active{outline:2px solid var(--link)}
+      .filters{margin:8px 0 16px}
+      .filterpill{display:inline-block;background:var(--chip);border:1px solid var(--chipbrd);border-radius:999px;padding:2px 8px;margin-right:6px;color:var(--text)}
+      details{margin-bottom:12px;border:1px solid var(--border);border-radius:10px;padding:8px 12px;background:var(--panel)}
+      summary{font-weight:600;cursor:pointer}
+      table{width:100%;border-collapse:collapse;margin-top:8px}
+      th,td{border-bottom:1px solid var(--border);padding:8px 10px;text-align:left}
+      th{background:var(--panel2);position:sticky;top:0}
+      .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:600;border:1px solid}
+      .kill{background:var(--goodbg);color:var(--good);border-color:var(--goodbrd)}
+      .wipe{background:var(--badbg);color:var(--bad);border-color:var(--badbrd)}
+      .muted{color:var(--muted)}
+      .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+      .bossh{background:var(--bossh);font-weight:600}
+      .totals{background:var(--totals);border-top:1px solid var(--totalsbrd);font-weight:700}
+      a{color:var(--link);text-decoration:none} a:hover{color:var(--linkhover);text-decoration:underline}
+      .mech{margin-top:4px;border:1px solid var(--border);border-radius:8px;overflow:hidden}
+      .mech th{background:var(--panel2)}
+    </style>
+    <script>
+      const state = { data:null, cutoff:2, theme:null };
+
+      function setTheme(light){
+        document.body.classList.toggle('light', !!light);
+        localStorage.setItem('raidReportTheme', light ? 'light':'dark');
+      }
+      function initTheme(){
+        const saved = localStorage.getItem('raidReportTheme');
+        if (saved==='light') setTheme(true);
+        else if (saved==='dark') setTheme(false);
+        else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) setTheme(true);
+      }
+      function fmt(ts){ try{ const d=new Date(ts); return isFinite(d)? d.toISOString().replace('T',' ').slice(0,19) : '—'; }catch(e){return '—'} }
+
+      function buildPlayerList(){
+        const wrap = document.getElementById('content');
+        wrap.innerHTML = ''; // rebuild
+        const cutoff = state.cutoff;
+        const eventsAll = state.data.events;
+        const pullsMap = state.data.pullParticipation;
+        const bossPart = state.data.bossParticipation;
+
+        // compute per-player stats for this cutoff
+        const stats = [];
+        for (const player of Object.keys(eventsAll)){
+          const evs = eventsAll[player].filter(ev => ev.rankWithinPull <= cutoff);
+          if (!evs.length) continue;
+          const pulls = (pullsMap[player]||[]).length;
+          const rate = pulls>0 ? (evs.length/pulls*100) : 0;
+          stats.push([player, evs.length, pulls, rate]);
+        }
+        stats.sort((a,b)=> b[3]-a[3] || b[1]-a[1] || a[0].localeCompare(b[0]));
+
+        if (!stats.length){
+          wrap.innerHTML = "<p class='muted'>No counted deaths found.</p>";
+          return;
+        }
+
+        for (const [player,totalCounted,totalPulls,rate] of stats){
+          const details = document.createElement('details'); // collapsed by default
+          const summary = document.createElement('summary');
+          summary.innerHTML = `${player} — <span class='muted'>${totalCounted} counted death(s) / ${totalPulls} pulls</span> <span class='rate'>· ${rate.toFixed(1)}%</span>`;
+          details.appendChild(summary);
+          // lazy build when opened
+          details.addEventListener('toggle', () => {
+            if (!details.open || details.dataset.built) return;
+            details.dataset.built = '1';
+            const table = document.createElement('table');
+            table.innerHTML = "<thead><tr><th>Boss</th><th>Pull #</th><th>Outcome</th><th>Phase</th><th>Date/Time</th><th>Report</th><th>Rank</th></tr></thead><tbody></tbody>";
+            const tbody = table.querySelector('tbody');
+
+            // group by boss
+            const rows = (eventsAll[player].filter(ev => ev.rankWithinPull<=cutoff))
+              .sort((a,b)=> (a.absTs-b.absTs) || (a.pullNo-b.pullNo));
+            const byBoss = {};
+            for (const ev of rows){ (byBoss[ev.boss] ||= []).push(ev); }
+
+            for (const boss of Object.keys(byBoss).sort((a,b)=> a.localeCompare(b))){
+              const bossRows = byBoss[boss];
+              const bossPulls = new Set((bossPart[boss] && bossPart[boss][player]) || []).size;
+              const bossDeaths = bossRows.length;
+              const bossRate = bossPulls>0 ? (bossDeaths/bossPulls*100) : 0;
+              const trH = document.createElement('tr');
+              trH.className = 'bossh';
+              trH.innerHTML = `<td colspan="7">${boss} — ${bossDeaths} counted death(s) / ${bossPulls} pulls · <span class='rate'>${bossRate.toFixed(1)}%</span></td>`;
+              tbody.appendChild(trH);
+
+              // deaths by mechanic
+              const mech = {};
+              for (const ev of bossRows){ mech[ev.abilityName] = (mech[ev.abilityName]||0)+1; }
+              const mechWrap = document.createElement('tr');
+              const mechTd = document.createElement('td');
+              mechTd.colSpan = 7;
+              const mechTable = document.createElement('table');
+              mechTable.className = 'mech';
+              const mechHead = "<thead><tr><th>Mechanic / Ability</th><th>Count</th></tr></thead>";
+              const mechBody = "<tbody>" + Object.entries(mech).sort((a,b)=>b[1]-a[1]).map(([name,c])=>`<tr><td>${name.replaceAll('<','&lt;').replaceAll('>','&gt;')}</td><td>${c}</td></tr>`).join('') + "</tbody>";
+              mechTable.innerHTML = mechHead + mechBody;
+              mechTd.appendChild(mechTable);
+              mechWrap.appendChild(mechTd);
+              tbody.appendChild(mechWrap);
+
+              // rows
+              for (const ev of bossRows){
+                const tr = document.createElement('tr');
+                const link = `https://www.warcraftlogs.com/reports/${ev.reportId}?fight=${ev.fightId}&type=deaths&cutoff=${cutoff}`;
+                const pill = ev.isKill ? "<span class='pill kill'>KILL</span>" : "<span class='pill wipe'>wipe</span>";
+                tr.innerHTML = `<td>${boss}</td><td>${ev.pullNo}</td><td>${pill}</td><td>${ev.phase}</td><td class='mono'>${fmt(ev.absTs)}</td><td><a target="_blank" rel="noopener" href="${link}">${ev.reportId}<span class='muted'>#${ev.fightId}</span></a></td><td>${ev.rankWithinPull}</td>`;
+                tbody.appendChild(tr);
+              }
+            }
+
+            const trT = document.createElement('tr');
+            trT.className = 'totals';
+            trT.innerHTML = `<td colspan="7">Player total: ${totalCounted} counted death(s) / ${totalPulls} pulls · <span class='rate'>${rate.toFixed(1)}%</span></td>`;
+            tbody.appendChild(trT);
+            details.appendChild(table);
+          }, {once:true});
+
+          wrap.appendChild(details);
+        }
+      }
+
+      async function bootstrap(){
+        initTheme();
+        // cutoff restore
+        const urlCo = (location.hash.match(/co=(\d+)/)||[])[1];
+        const saved = localStorage.getItem('raidReportCutoff');
+        state.cutoff = parseInt(urlCo || saved || '2', 10);
+
+        const res = await fetch('data.json', {cache:'no-store'});
+        state.data = await res.json();
+
+        document.getElementById('meta').innerHTML =
+          `Authors: ${(state.data.meta.authorFilters||[]).join('; ') || 'All'} · Date ≤ ${state.data.meta.dateCutoff} · Zone=${state.data.meta.zone} · Diff=${state.data.meta.difficulty} · Generated ${state.data.meta.generatedAt}`;
+
+        // controls
+        document.getElementById('toggle').onclick = ()=> setTheme(!document.body.classList.contains('light'));
+        const select = document.getElementById('cutoffSelect');
+        for (let i=1;i<=state.data.meta.maxCutoff;i++){
+          const opt=document.createElement('option'); opt.value=i; opt.textContent=`cutoff ${i}`;
+          if (i===state.cutoff) opt.selected=true; select.appendChild(opt);
+        }
+        select.onchange = e => { state.cutoff = parseInt(e.target.value,10); localStorage.setItem('raidReportCutoff', String(state.cutoff)); history.replaceState(null,'',`#co=${state.cutoff}`); buildPlayerList(); };
+
+        const chips = document.getElementById('chips');
+        for (let i=1;i<=state.data.meta.maxCutoff;i++){
+          const a=document.createElement('a'); a.href="#"; a.className='chip'; a.textContent=`cutoff ${i}`;
+          if (i===state.cutoff) a.classList.add('active');
+          a.onclick = (ev)=>{ev.preventDefault(); state.cutoff=i; localStorage.setItem('raidReportCutoff', String(i)); history.replaceState(null,'',`#co=${i}`); [...chips.children].forEach(x=>x.classList.remove('active')); a.classList.add('active'); select.value=String(i); buildPlayerList();};
+          chips.appendChild(a);
+        }
+
+        buildPlayerList();
+      }
+      window.addEventListener('DOMContentLoaded', bootstrap);
+    </script>
+    </head>
 <body>
-<p>This is the SPA shell. It loads data.json with JavaScript. Make sure data.json is uploaded alongside index.html.</p>
+  <div class="wrap">
+    <div class="topbar">
+      <h1>Counted Deaths Report</h1>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <button id="toggle" class="toggle">Toggle Light/Dark</button>
+        <div id="chips"></div>
+        <select id="cutoffSelect" class="select"></select>
+      </div>
+    </div>
+    <div id="meta" class="sub"></div>
+    <div id="content"></div>
+  </div>
 </body></html>
