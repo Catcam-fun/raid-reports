@@ -1,176 +1,141 @@
-<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>Counted Deaths Report</title>
-    <style>
-      :root {
-        --bg:#0b0e14; --panel:#11151d; --panel2:#0f1420; --border:#1f2937;
-        --text:#e5e7eb; --muted:#9aa4b2; --link:#93c5fd; --linkhover:#bfdbfe;
-        --goodbg:#063f2e; --good:#34d399; --goodbrd:#065f46;
-        --badbg:#3b0d0d; --bad:#f87171; --badbrd:#7f1d1d;
-        --bossh:#141a29; --totals:#3a2f0a; --totalsbrd:#b45309; --chip:#1f2937; --chipbrd:#374151;
-      }
-      body.light {
-        --bg:#fff; --panel:#f9fafb; --panel2:#fff; --border:#e5e7eb; --text:#111827; --muted:#6b7280;
-        --link:#1d4ed8; --linkhover:#1e40af; --goodbg:#e6ffed; --good:#047857; --goodbrd:#a7f3d0;
-        --badbg:#fee2e2; --bad:#991b1b; --badbrd:#fecaca; --bossh:#eef2ff; --totals:#fef3c7; --totalsbrd:#f59e0b; --chip:#e5e7eb; --chipbrd:#d1d5db;
-      }
-      html,body{margin:0;padding:0}
-      body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;line-height:1.5;padding:24px}
-      .wrap{max-width:1100px;margin:0 auto}
-      h1{margin:0 0 8px}
-      .topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px}
-      .sub{color:var(--muted);margin:6px 0 12px}
-      .toggle,.select{background:var(--panel);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:8px}
-      .toggle{cursor:pointer}
-      details{margin-bottom:12px;border:1px solid var(--border);border-radius:10px;padding:8px 12px;background:var(--panel)}
-      summary{font-weight:600;cursor:pointer}
-      table{width:100%;border-collapse:collapse;margin-top:8px}
-      th,td{border-bottom:1px solid var(--border);padding:8px 10px;text-align:left}
-      th{background:var(--panel2);position:sticky;top:0}
-      .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:600;border:1px solid}
-      .kill{background:var(--goodbg);color:var(--good);border-color:var(--goodbrd)}
-      .wipe{background:var(--badbg);color:var(--bad);border-color:var(--badbrd)}
-      .muted{color:var(--muted)}
-      .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
-      .bossh{background:var(--bossh);font-weight:600}
-      .totals{background:var(--totals);border-top:1px solid var(--totalsbrd);font-weight:700}
-      a{color:var(--link);text-decoration:none} a:hover{color:var(--linkhover);text-decoration:underline}
-    </style>
-    <script>
-      const state = { data:null, cutoff:2, theme:null };
-
-      function setTheme(light){
-        document.body.classList.toggle('light', !!light);
-        localStorage.setItem('raidReportTheme', light ? 'light':'dark');
-      }
-      function initTheme(){
-        const saved = localStorage.getItem('raidReportTheme');
-        if (saved==='light') setTheme(true);
-        else if (saved==='dark') setTheme(false);
-        else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) setTheme(true);
-      }
-      function fmt(ts){ try{ const d=new Date(ts); return isFinite(d)? d.toISOString().replace('T',' ').slice(0,19) : '—'; }catch(e){return '—'} }
-
-      function buildPlayerList(){
-        const wrap = document.getElementById('content');
-        wrap.innerHTML = ''; // rebuild
-        const cutoff = state.cutoff;
-        const eventsAll = state.data.events;
-        const pullsMap = state.data.pullParticipation;
-        const bossPart = state.data.bossParticipation;
-
-        // compute per-player stats for this cutoff
-        const stats = [];
-        for (const player of Object.keys(eventsAll)){
-          const evs = eventsAll[player].filter(ev => ev.rankWithinPull <= cutoff);
-          if (!evs.length) continue;
-          const pulls = (pullsMap[player]||[]).length;
-          const rate = pulls>0 ? (evs.length/pulls*100) : 0;
-          stats.push([player, evs.length, pulls, rate]);
-        }
-        stats.sort((a,b)=> b[3]-a[3] || b[1]-a[1] || a[0].localeCompare(b[0]));
-
-        if (!stats.length){
-          wrap.innerHTML = "<p class='muted'>No counted deaths found.</p>";
-          return;
-        }
-
-        for (const [player,totalCounted,totalPulls,rate] of stats){
-          const details = document.createElement('details'); // collapsed by default
-          const summary = document.createElement('summary');
-          summary.innerHTML = `${player} — <span class='muted'>${totalCounted} counted death(s) / ${totalPulls} pulls</span> <span class='rate'>· ${rate.toFixed(1)}%</span>`;
-          details.appendChild(summary);
-          // lazy build when opened
-          details.addEventListener('toggle', () => {
-            if (!details.open || details.dataset.built) return;
-            details.dataset.built = '1';
-            const table = document.createElement('table');
-            table.innerHTML = "<thead><tr><th>Boss</th><th>Pull #</th><th>Outcome</th><th>Phase</th><th>Date/Time</th><th>Report</th><th>Rank</th></tr></thead><tbody></tbody>";
-            const tbody = table.querySelector('tbody');
-
-            // group by boss
-            const rows = (eventsAll[player].filter(ev => ev.rankWithinPull<=cutoff))
-              .sort((a,b)=> (a.absTs-b.absTs) || (a.pullNo-b.pullNo));
-            const byBoss = {};
-            for (const ev of rows){ (byBoss[ev.boss] ||= []).push(ev); }
-
-            for (const boss of Object.keys(byBoss).sort((a,b)=> a.localeCompare(b))){
-              const bossRows = byBoss[boss];
-              const bossPulls = new Set((bossPart[boss] && bossPart[boss][player]) || []).size;
-              const bossDeaths = bossRows.length;
-              const bossRate = bossPulls>0 ? (bossDeaths/bossPulls*100) : 0;
-              const trH = document.createElement('tr');
-              trH.className = 'bossh';
-              trH.innerHTML = `<td colspan="7">${boss} — ${bossDeaths} counted death(s) / ${bossPulls} pulls · <span class='rate'>${bossRate.toFixed(1)}%</span></td>`;
-              tbody.appendChild(trH);
-
-              // (Mechanic/Ability table removed)
-
-              // rows
-              for (const ev of bossRows){
-                const tr = document.createElement('tr');
-                const link = `https://www.warcraftlogs.com/reports/${ev.reportId}?fight=${ev.fightId}&type=deaths&cutoff=${cutoff}`;
-                const pill = ev.isKill ? "<span class='pill kill'>KILL</span>" : "<span class='pill wipe'>wipe</span>";
-                tr.innerHTML = `<td>${boss}</td><td>${ev.pullNo}</td><td>${pill}</td><td>${ev.phase}</td><td class='mono'>${fmt(ev.absTs)}</td><td><a target="_blank" rel="noopener" href="${link}">${ev.reportId}<span class='muted'>#${ev.fightId}</span></a></td><td>${ev.rankWithinPull}</td>`;
-                tbody.appendChild(tr);
-              }
-            }
-
-            const trT = document.createElement('tr');
-            trT.className = 'totals';
-            trT.innerHTML = `<td colspan="7">Player total: ${totalCounted} counted death(s) / ${totalPulls} pulls · <span class='rate'>${rate.toFixed(1)}%</span></td>`;
-            tbody.appendChild(trT);
-            details.appendChild(table);
-          }, {once:true});
-
-          wrap.appendChild(details);
-        }
-      }
-
-      async function bootstrap(){
-        initTheme();
-        // cutoff restore
-        const urlCo = (location.hash.match(/co=(\d+)/)||[])[1];
-        const saved = localStorage.getItem('raidReportCutoff');
-        state.cutoff = parseInt(urlCo || saved || '2', 10);
-
-        const res = await fetch('data.json', {cache:'no-store'});
-        state.data = await res.json();
-
-        document.getElementById('meta').innerHTML =
-          `Authors: ${(state.data.meta.authorFilters||[]).join('; ') || 'All'} · Date ≤ ${state.data.meta.dateCutoff} · Zone=${state.data.meta.zone} · Diff=${state.data.meta.difficulty} · Generated ${state.data.meta.generatedAt}`;
-
-        // single dropdown control: "X Deaths"
-        const select = document.getElementById('cutoffSelect');
-        for (let i=1;i<=state.data.meta.maxCutoff;i++){
-          const opt=document.createElement('option'); 
-          opt.value=i; 
-          opt.textContent = i===1 ? '1 Death' : `${i} Deaths`;
-          if (i===state.cutoff) opt.selected=true; 
-          select.appendChild(opt);
-        }
-        select.onchange = e => { 
-          state.cutoff = parseInt(e.target.value,10); 
-          localStorage.setItem('raidReportCutoff', String(state.cutoff)); 
-          history.replaceState(null,'',`#co=${state.cutoff}`); 
-          buildPlayerList(); 
-        };
-
-        buildPlayerList();
-      }
-      window.addEventListener('DOMContentLoaded', bootstrap);
-    </script>
-    </head>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Do Over – Death Report</title>
+<style>
+:root { --bg:#0b0f14; --fg:#e9eef3; --muted:#90a4ae; --chip:#1f2a33; --accent:#7aa2f7; --warn:#ffb454; }
+body { background:var(--bg); color:var(--fg); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji"; margin:0; }
+header { display:flex; gap:12px; align-items:center; padding:16px 20px; position:sticky; top:0; background: rgba(11,15,20,.9); backdrop-filter: blur(6px); border-bottom:1px solid #223; z-index:10; }
+h1 { font-size:18px; margin:0; font-weight:600; }
+select, button { background:#101820; color:var(--fg); border:1px solid #24313c; border-radius:10px; padding:8px 10px; }
+.container { padding: 10px 18px 60px; }
+.card { background:#0f1720; border:1px solid #1b2630; border-radius:14px; padding:14px; margin:12px 0; }
+.row { display:flex; gap:10px; align-items:center; justify-content: space-between; }
+.badge { padding:2px 8px; border-radius:999px; background:#16202a; border:1px solid #24313c; color:var(--muted); font-size:12px; }
+.badge.out { color: #111; background: var(--warn); border-color:#d5942c; }
+.chips { display:flex; gap:8px; flex-wrap: wrap; }
+.chip { padding:6px 9px; border-radius:999px; background:var(--chip); border:1px solid #22313d; cursor:pointer; user-select:none; }
+.chip.sel { outline: 2px solid var(--accent); }
+.small { font-size:12px; color: var(--muted); }
+table { width:100%; border-collapse: collapse; margin-top: 8px; }
+th, td { text-align:left; padding:6px 8px; border-bottom:1px solid #1b2630; }
+thead th { position: sticky; top: 64px; background:#0f1720; }
+</style>
+</head>
 <body>
-  <div class="wrap">
-    <div class="topbar">
-      <h1>Counted Deaths Report</h1>
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-        <button id="toggle" class="toggle">Toggle Light/Dark</button>
-        <label for="cutoffSelect" class="muted">Deaths:</label>
-        <select id="cutoffSelect" class="select"></select>
-      </div>
-    </div>
-    <div id="meta" class="sub"></div>
-    <div id="content"></div>
-  </div>
-</body></html>
+<header>
+  <h1>Do Over – Death Report</h1>
+  <label class="small">Show deaths ≤ 
+    <select id="cutoff"></select>
+  </label>
+  <div id="chips" class="chips"></div>
+  <span id="meta" class="small"></span>
+</header>
+<div class="container">
+  <div id="overall" class="card"></div>
+  <div id="players"></div>
+</div>
+<script>
+(async function() {
+  const resp = await fetch('data.json');
+  const data = await resp.json();
+  const cutoffSel = document.getElementById('cutoff');
+  for (let i=1;i<=data.meta.max_cutoff;i++) {
+    const opt = document.createElement('option');
+    opt.value = i; opt.textContent = i + ' Deaths';
+    cutoffSel.appendChild(opt);
+  }
+  cutoffSel.value = localStorage.getItem('cutoff') || 3;
+  cutoffSel.addEventListener('change', () => {
+    localStorage.setItem('cutoff', cutoffSel.value);
+    render();
+  });
+
+  const chipsDiv = document.getElementById('chips');
+  const selected = new Set(JSON.parse(localStorage.getItem('bossFilter')||'[]'));
+  function toggleChip(id) {
+    if (selected.has(id)) selected.delete(id); else selected.add(id);
+    localStorage.setItem('bossFilter', JSON.stringify([...selected]));
+    render();
+  }
+  function chip(b) {
+    const el = document.createElement('span');
+    el.className = 'chip' + (selected.has(b.id)?' sel':'');
+    el.textContent = b.name + ' (' + b.pulls + ')';
+    el.onclick = () => toggleChip(b.id);
+    return el;
+  }
+  data.bosses.forEach(b => chipsDiv.appendChild(chip(b)));
+  document.getElementById('meta').textContent = `Pulls: ${data.bosses.reduce((a,b)=>a+b.pulls,0)} | Generated ${new Date(data.meta.generated_at).toLocaleString()}`;
+
+  function passesBossFilter(bid) {
+    if (selected.size === 0) return true;
+    return selected.has(bid);
+  }
+
+  function rateBadge(player, bid) {
+    const pulls = (data.bosses.find(b=>b.id==bid)||{pulls:1}).pulls;
+    const deaths = (data.players[player].byBoss[bid]||0);
+    const rate = deaths / Math.max(1,pulls);
+    const med = data.bossMedians[bid] || 0;
+    const isOut = (rate > 1.5 * med) && pulls >= 2;
+    const span = document.createElement('span');
+    span.className = 'badge' + (isOut ? ' out' : '');
+    span.textContent = isOut ? 'outlier' : (deaths + '/' + pulls);
+    span.title = `Deaths ${deaths} over ${pulls} pulls; median=${med.toFixed(2)}`;
+    return span;
+  }
+
+  function render() {
+    const cutoff = +cutoffSel.value;
+    const overallDiv = document.getElementById('overall');
+    const playersDiv = document.getElementById('players');
+    overallDiv.innerHTML = ''; playersDiv.innerHTML = '';
+
+    // overall
+    const tbl = document.createElement('table');
+    tbl.innerHTML = '<thead><tr><th>Player</th><th>Total</th></tr></thead>';
+    const tb = document.createElement('tbody');
+    data.overall.forEach(r => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${r.player}</td><td>${r.total}</td>`;
+      tb.appendChild(tr);
+    });
+    tbl.appendChild(tb); overallDiv.appendChild(tbl);
+
+    // players
+    for (const player of Object.keys(data.players)) {
+      const card = document.createElement('div'); card.className='card';
+      const row = document.createElement('div'); row.className='row';
+      const h = document.createElement('div'); h.textContent = player;
+      row.appendChild(h);
+      card.appendChild(row);
+
+      // per-boss rows
+      const tbl2 = document.createElement('table');
+      tbl2.innerHTML = '<thead><tr><th>Boss</th><th>Rate</th><th>Recent deaths</th></tr></thead>';
+      const tb2 = document.createElement('tbody');
+      for (const b of data.bosses) {
+        if (!passesBossFilter(b.id)) continue;
+        const deaths = (data.players[player].details[String(b.id)]||[]).slice(-cutoff);
+        const tr = document.createElement('tr');
+        const badge = rateBadge(player, String(b.id));
+        const nameTd = document.createElement('td');
+        nameTd.textContent = b.name;
+        const rateTd = document.createElement('td'); rateTd.appendChild(badge);
+        const detTd = document.createElement('td');
+        detTd.textContent = deaths.map(d => `${(d.t/1000).toFixed(0)}s: ${d.ability}`).join(' • ') || '—';
+        tb2.appendChild(tr);
+        tr.appendChild(nameTd); tr.appendChild(rateTd); tr.appendChild(detTd);
+      }
+      tbl2.appendChild(tb2); card.appendChild(tbl2);
+      playersDiv.appendChild(card);
+    }
+  }
+  render();
+})();
+</script>
+</body>
+</html>
