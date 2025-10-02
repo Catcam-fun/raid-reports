@@ -33,14 +33,10 @@
       .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
       .bossh{background:var(--bossh);font-weight:600}
       .totals{background:var(--totals);border-top:1px solid var(--totalsbrd);font-weight:700}
-      .chips{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}
-      .chip{background:var(--chip);border:1px solid var(--chipbrd);padding:4px 8px;border-radius:999px;cursor:pointer}
-      .chip.sel{outline:2px solid var(--link)}
-      .pill.outlier{background:#f59e0b22;color:#f59e0b;border-color:#f59e0b}
       a{color:var(--link);text-decoration:none} a:hover{color:var(--linkhover);text-decoration:underline}
     </style>
     <script>
-      const state = { data:null, cutoff:2, theme:null, selectedBosses:new Set() };
+      const state = { data:null, cutoff:2, theme:null };
 
       function setTheme(light){
         document.body.classList.toggle('light', !!light);
@@ -54,18 +50,6 @@
       }
       function fmt(ts){ try{ const d=new Date(ts); return isFinite(d)? d.toISOString().replace('T',' ').slice(0,19) : '—'; }catch(e){return '—'} }
 
-      function bossPass(name){ return state.selectedBosses.size===0 || state.selectedBosses.has(name); }
-      function median(values){ if(!values.length) return 0; values=[...values].sort((a,b)=>a-b); const mid=Math.floor(values.length/2); return values.length%2?values[mid]:(values[mid-1]+values[mid])/2; }
-      function buildChips(){
-        const holder = document.getElementById('bossChips'); holder.innerHTML='';
-        const bosses = Object.keys(state.data.bossParticipation).sort((a,b)=>a.localeCompare(b));
-        bosses.forEach(b=>{
-          const chip=document.createElement('span'); chip.className='chip'; chip.textContent=b;
-          if(state.selectedBosses.has(b)) chip.classList.add('sel');
-          chip.onclick=()=>{ if(state.selectedBosses.has(b)) state.selectedBosses.delete(b); else state.selectedBosses.add(b); buildChips(); buildPlayerList(); };
-          holder.appendChild(chip);
-        });
-      }
       function buildPlayerList(){
         const wrap = document.getElementById('content');
         wrap.innerHTML = ''; // rebuild
@@ -74,16 +58,35 @@
         const pullsMap = state.data.pullParticipation;
         const bossPart = state.data.bossParticipation;
 
-        // compute per-player stats for this cutoff
-        const stats = [];
-        for (const player of Object.keys(eventsAll)){
-          const evs = eventsAll[player].filter(ev => ev.rankWithinPull <= cutoff);
-          if (!evs.length) continue;
-          const pulls = (pullsMap[player]||[]).length;
-          const rate = pulls>0 ? (evs.length/pulls*100) : 0;
-          stats.push([player, evs.length, pulls, rate]);
-        }
-        stats.sort((a,b)=> b[3]-a[3] || b[1]-a[1] || a[0].localeCompare(b[0]));
+        // compute per-player stats for this cutoff (respect boss chips)
+const stats = [];
+const bossPart = state.data.bossParticipation;
+const pullsMap = state.data.pullParticipation;
+const eventsAll = state.data.events;
+
+function pullsForPlayerFiltered(player){
+  const set = new Set();
+  const bosses = Object.keys(bossPart);
+  for (const b of bosses){
+    if (state.selectedBosses.size && !state.selectedBosses.has(b)) continue;
+    const bp = bossPart[b] && bossPart[b][player];
+    if (!bp) continue;
+    for (const pid of bp) set.add(pid);
+  }
+  if (set.size===0 && state.selectedBosses.size===0){
+    for (const pid of (pullsMap[player]||[])) set.add(pid);
+  }
+  return set.size;
+}
+
+for (const player of Object.keys(eventsAll)){
+  const evs = eventsAll[player].filter(ev => ev.rankWithinPull <= cutoff && (state.selectedBosses.size===0 || state.selectedBosses.has(ev.boss)));
+  if (!evs.length) continue;
+  const pulls = pullsForPlayerFiltered(player);
+  const rate = pulls>0 ? (evs.length/pulls*100) : 0;
+  stats.push([player, evs.length, pulls, rate]);
+}
+stats.sort((a,b)=> b[3]-a[3] || b[1]-a[1] || a[0].localeCompare(b[0]));
 
         if (!stats.length){
           wrap.innerHTML = "<p class='muted'>No counted deaths found.</p>";
@@ -100,7 +103,7 @@
             if (!details.open || details.dataset.built) return;
             details.dataset.built = '1';
             const table = document.createElement('table');
-            table.innerHTML = "<thead><tr><th>Boss</th><th>Pull #</th><th>Outcome</th><th>Phase</th><th>Date/Time</th><th>Report</th><th>Rank</th></tr></thead><tbody></tbody>";
+            table.innerHTML = "<thead><tr><th>Boss</th><th>Pull #</th><th>Outcome</th><th>Phase</th><th>Date/Time</th><th>Killing Blow</th><th>Report</th><th>Rank</th></tr></thead><tbody></tbody>";
             const tbody = table.querySelector('tbody');
 
             // group by boss
@@ -114,19 +117,9 @@
               const bossPulls = new Set((bossPart[boss] && bossPart[boss][player]) || []).size;
               const bossDeaths = bossRows.length;
               const bossRate = bossPulls>0 ? (bossDeaths/bossPulls*100) : 0;
-              if(!bossPass(boss)) continue;
-              // compute team median rate for this boss
-              const teamRates=[];
-              for(const pl of Object.keys(eventsAll)){
-                const pPulls = ((bossPart[boss] && bossPart[boss][pl])? new Set(bossPart[boss][pl]).size : 0);
-                const pDeaths = (eventsAll[pl]||[]).filter(ev=>ev.rankWithinPull<=cutoff && ev.boss===boss).length;
-                if(pPulls>0) teamRates.push(pDeaths/pPulls);
-              }
-              const med = median(teamRates);
-              const isOutlier = (bossPulls>=2) && ((bossDeaths/Math.max(1,bossPulls)) > 1.5*med);
               const trH = document.createElement('tr');
               trH.className = 'bossh';
-              trH.innerHTML = `<td colspan="7">${boss} — ${bossDeaths} counted death(s) / ${bossPulls} pulls · <span class='rate'>${bossRate.toFixed(1)}%</span> ${isOutlier?"<span class='pill outlier' title='>1.5× team median'>outlier</span>":""}</td>`;
+              trH.innerHTML = `<td colspan="7">${boss} — ${bossDeaths} counted death(s) / ${bossPulls} pulls · <span class='rate'>${bossRate.toFixed(1)}%</span></td>`;
               tbody.appendChild(trH);
 
               // (Mechanic/Ability table removed)
@@ -178,11 +171,9 @@
           state.cutoff = parseInt(e.target.value,10); 
           localStorage.setItem('raidReportCutoff', String(state.cutoff)); 
           history.replaceState(null,'',`#co=${state.cutoff}`); 
-          buildChips();
-        buildPlayerList(); 
+          buildPlayerList(); 
         };
 
-        buildChips();
         buildPlayerList();
       }
       window.addEventListener('DOMContentLoaded', bootstrap);
@@ -193,7 +184,6 @@
     <div class="topbar">
       <h1>Counted Deaths Report</h1>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-        <div id="bossChips" class="chips"></div>
         <button id="toggle" class="toggle">Toggle Light/Dark</button>
         <label for="cutoffSelect" class="muted">Deaths:</label>
         <select id="cutoffSelect" class="select"></select>
