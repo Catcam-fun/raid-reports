@@ -19,12 +19,8 @@
       h1{margin:0 0 8px}
       .topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px}
       .sub{color:var(--muted);margin:6px 0 12px}
-      .toggle,.select,.chip{background:var(--panel);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:8px}
+      .toggle,.select{background:var(--panel);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:8px}
       .toggle{cursor:pointer}
-      .chip{display:inline-block;text-decoration:none;margin-right:6px}
-      .chip.active{outline:2px solid var(--link)}
-      .filters{margin:8px 0 16px}
-      .filterpill{display:inline-block;background:var(--chip);border:1px solid var(--chipbrd);border-radius:999px;padding:2px 8px;margin-right:6px;color:var(--text)}
       details{margin-bottom:12px;border:1px solid var(--border);border-radius:10px;padding:8px 12px;background:var(--panel)}
       summary{font-weight:600;cursor:pointer}
       table{width:100%;border-collapse:collapse;margin-top:8px}
@@ -38,8 +34,6 @@
       .bossh{background:var(--bossh);font-weight:600}
       .totals{background:var(--totals);border-top:1px solid var(--totalsbrd);font-weight:700}
       a{color:var(--link);text-decoration:none} a:hover{color:var(--linkhover);text-decoration:underline}
-      .mech{margin-top:4px;border:1px solid var(--border);border-radius:8px;overflow:hidden}
-      .mech th{background:var(--panel2)}
     </style>
     <script>
       const state = { data:null, cutoff:2, theme:null };
@@ -109,20 +103,7 @@
               trH.innerHTML = `<td colspan="7">${boss} — ${bossDeaths} counted death(s) / ${bossPulls} pulls · <span class='rate'>${bossRate.toFixed(1)}%</span></td>`;
               tbody.appendChild(trH);
 
-              // deaths by mechanic
-              const mech = {};
-              for (const ev of bossRows){ mech[ev.abilityName] = (mech[ev.abilityName]||0)+1; }
-              const mechWrap = document.createElement('tr');
-              const mechTd = document.createElement('td');
-              mechTd.colSpan = 7;
-              const mechTable = document.createElement('table');
-              mechTable.className = 'mech';
-              const mechHead = "<thead><tr><th>Mechanic / Ability</th><th>Count</th></tr></thead>";
-              const mechBody = "<tbody>" + Object.entries(mech).sort((a,b)=>b[1]-a[1]).map(([name,c])=>`<tr><td>${name.replaceAll('<','&lt;').replaceAll('>','&gt;')}</td><td>${c}</td></tr>`).join('') + "</tbody>";
-              mechTable.innerHTML = mechHead + mechBody;
-              mechTd.appendChild(mechTable);
-              mechWrap.appendChild(mechTd);
-              tbody.appendChild(mechWrap);
+              // (Mechanic/Ability table removed)
 
               // rows
               for (const ev of bossRows){
@@ -158,22 +139,21 @@
         document.getElementById('meta').innerHTML =
           `Authors: ${(state.data.meta.authorFilters||[]).join('; ') || 'All'} · Date ≤ ${state.data.meta.dateCutoff} · Zone=${state.data.meta.zone} · Diff=${state.data.meta.difficulty} · Generated ${state.data.meta.generatedAt}`;
 
-        // controls
-        document.getElementById('toggle').onclick = ()=> setTheme(!document.body.classList.contains('light'));
+        // single dropdown control: "X Deaths"
         const select = document.getElementById('cutoffSelect');
         for (let i=1;i<=state.data.meta.maxCutoff;i++){
-          const opt=document.createElement('option'); opt.value=i; opt.textContent=`cutoff ${i}`;
-          if (i===state.cutoff) opt.selected=true; select.appendChild(opt);
+          const opt=document.createElement('option'); 
+          opt.value=i; 
+          opt.textContent = i===1 ? '1 Death' : `${i} Deaths`;
+          if (i===state.cutoff) opt.selected=true; 
+          select.appendChild(opt);
         }
-        select.onchange = e => { state.cutoff = parseInt(e.target.value,10); localStorage.setItem('raidReportCutoff', String(state.cutoff)); history.replaceState(null,'',`#co=${state.cutoff}`); buildPlayerList(); };
-
-        const chips = document.getElementById('chips');
-        for (let i=1;i<=state.data.meta.maxCutoff;i++){
-          const a=document.createElement('a'); a.href="#"; a.className='chip'; a.textContent=`cutoff ${i}`;
-          if (i===state.cutoff) a.classList.add('active');
-          a.onclick = (ev)=>{ev.preventDefault(); state.cutoff=i; localStorage.setItem('raidReportCutoff', String(i)); history.replaceState(null,'',`#co=${i}`); [...chips.children].forEach(x=>x.classList.remove('active')); a.classList.add('active'); select.value=String(i); buildPlayerList();};
-          chips.appendChild(a);
-        }
+        select.onchange = e => { 
+          state.cutoff = parseInt(e.target.value,10); 
+          localStorage.setItem('raidReportCutoff', String(state.cutoff)); 
+          history.replaceState(null,'',`#co=${state.cutoff}`); 
+          buildPlayerList(); 
+        };
 
         buildPlayerList();
       }
@@ -186,7 +166,7 @@
       <h1>Counted Deaths Report</h1>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <button id="toggle" class="toggle">Toggle Light/Dark</button>
-        <div id="chips"></div>
+        <label for="cutoffSelect" class="muted">Deaths:</label>
         <select id="cutoffSelect" class="select"></select>
       </div>
     </div>
