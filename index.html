@@ -171,11 +171,27 @@
               trH.innerHTML = `<td colspan="8">${boss} — ${bossDeaths} counted death(s) / ${bossPulls} pulls · <span class='rate'>${bossRate.toFixed(1)}%</span>${outlierBadge}</td>`;
               tbody.appendChild(trH);
 
+              // Ability frequency table
+              const abilityCount = {};
+              for (const ev of bossRows) {
+                const ability = ev.abilityName || 'Unknown';
+                abilityCount[ability] = (abilityCount[ability] || 0) + 1;
+              }
+              const sortedAbilities = Object.entries(abilityCount).sort((a,b) => b[1] - a[1]).slice(0,5);
+              
+              if (sortedAbilities.length > 0) {
+                const trAbility = document.createElement('tr');
+                trAbility.innerHTML = `<td colspan="8" style="padding:8px 10px;background:var(--panel2)"><div style="font-size:13px;color:var(--muted)"><strong>Top Causes of Death:</strong> ${sortedAbilities.map(([ability, count]) => `${ability} (${count}×)`).join(' · ')}</div></td>`;
+                tbody.appendChild(trAbility);
+              }
+
+              // rows
               for (const ev of bossRows){
                 const tr = document.createElement('tr');
                 const link = `https://www.warcraftlogs.com/reports/${ev.reportId}?fight=${ev.fightId}&type=deaths&cutoff=${cutoff}`;
                 const pill = ev.isKill ? "<span class='pill kill'>KILL</span>" : "<span class='pill wipe'>wipe</span>";
-                tr.innerHTML = `<td>${boss}</td><td>${ev.pullNo}</td><td>${pill}</td><td>${ev.phase}</td><td class='mono'>${fmt(ev.absTs)}</td><td><a target="_blank" rel="noopener" href="${link}">${ev.reportId}<span class='muted'>#${ev.fightId}</span></a></td><td>${ev.rankWithinPull}</td>`;
+                const ability = ev.abilityName || 'Unknown';
+                tr.innerHTML = `<td>${boss}</td><td>${ev.pullNo}</td><td>${pill}</td><td>${ev.phase}</td><td>${ability}</td><td class='mono'>${fmt(ev.absTs)}</td><td><a target="_blank" rel="noopener" href="${link}">${ev.reportId}<span class='muted'>#${ev.fightId}</span></a></td><td>${ev.rankWithinPull}</td>`;
                 tbody.appendChild(tr);
               }
             }
