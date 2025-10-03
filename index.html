@@ -80,7 +80,22 @@
         for (const player of Object.keys(eventsAll)){
           const evs = eventsAll[player].filter(ev => ev.rankWithinPull <= cutoff && bossPass(ev.boss));
           if (!evs.length) continue;
-          const pulls = (pullsMap[player]||[]).length;
+          
+          // Calculate pulls based on selected bosses
+          let pulls;
+          if (state.selectedBosses.size === 0) {
+            // No filter - use all pulls
+            pulls = (pullsMap[player]||[]).length;
+          } else {
+            // Count pulls only for selected bosses
+            pulls = 0;
+            for (const boss of state.selectedBosses) {
+              if (bossPart[boss] && bossPart[boss][player]) {
+                pulls += bossPart[boss][player].length;
+              }
+            }
+          }
+          
           const rate = pulls>0 ? (evs.length/pulls*100) : 0;
           stats.push([player, evs.length, pulls, rate]);
         }
