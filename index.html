@@ -7,11 +7,13 @@
         --goodbg:#063f2e; --good:#34d399; --goodbrd:#065f46;
         --badbg:#3b0d0d; --bad:#f87171; --badbrd:#7f1d1d;
         --bossh:#141a29; --totals:#3a2f0a; --totalsbrd:#b45309; --chip:#1f2937; --chipbrd:#374151;
+        --outlier:#dc2626; --outlierbg:#450a0a;
       }
       body.light {
         --bg:#fff; --panel:#f9fafb; --panel2:#fff; --border:#e5e7eb; --text:#111827; --muted:#6b7280;
         --link:#1d4ed8; --linkhover:#1e40af; --goodbg:#e6ffed; --good:#047857; --goodbrd:#a7f3d0;
         --badbg:#fee2e2; --bad:#991b1b; --badbrd:#fecaca; --bossh:#eef2ff; --totals:#fef3c7; --totalsbrd:#f59e0b; --chip:#e5e7eb; --chipbrd:#d1d5db;
+        --outlier:#dc2626; --outlierbg:#fef2f2;
       }
       html,body{margin:0;padding:0}
       body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;line-height:1.5;padding:24px}
@@ -29,46 +31,45 @@
       .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:600;border:1px solid}
       .kill{background:var(--goodbg);color:var(--good);border-color:var(--goodbrd)}
       .wipe{background:var(--badbg);color:var(--bad);border-color:var(--badbrd)}
+      .outlier-badge{background:var(--outlierbg);color:var(--outlier);font-size:11px;padding:2px 6px;border-radius:4px;font-weight:700;margin-left:6px}
       .muted{color:var(--muted)}
       .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
       .bossh{background:var(--bossh);font-weight:600}
       .totals{background:var(--totals);border-top:1px solid var(--totalsbrd);font-weight:700}
       .chips{display:flex;gap:6px;flex-wrap:wrap}
-      .chip{background:var(--chip);border:1px solid var(--chipbrd);padding:4px 8px;border-radius:999px;cursor:pointer}
+      .chip{background:var(--chip);border:1px solid var(--chipbrd);padding:4px 8px;border-radius:999px;cursor:pointer;user-select:none}
       .chip.sel{outline:2px solid var(--link)}
       a{color:var(--link);text-decoration:none} a:hover{color:var(--linkhover);text-decoration:underline}
     </style>
     <script>
-      const state = { data:null, cutoff:2, theme:null, selectedBoss:null };
+      const state = { data:null, cutoff:2, theme:null, selectedBosses:new Set() };
 
-      function setTheme(light){
-        document.body.classList.toggle('light', !!light);
-        localStorage.setItem('raidReportTheme', light ? 'light':'dark');
-      }
-      function initTheme(){
-        const saved = localStorage.getItem('raidReportTheme');
-        if (saved==='light') setTheme(true);
-        else if (saved==='dark') setTheme(false);
-        else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) setTheme(true);
-      }
       function fmt(ts){ try{ const d=new Date(ts); return isFinite(d)? d.toISOString().replace('T',' ').slice(0,19) : '—'; }catch(e){return '—'} }
 
-      function bossPass(name){ return !state.selectedBoss || state.selectedBoss===name; }
+      function bossPass(name){ return !state.selectedBosses.size || state.selectedBosses.has(name); }
       function median(values){ if(!values.length) return 0; values=[...values].sort((a,b)=>a-b); const mid=Math.floor(values.length/2); return values.length%2?values[mid]:(values[mid-1]+values[mid])/2; }
+      
       function buildChips(){
         const holder = document.getElementById('bossChips'); if(!holder) return;
         holder.innerHTML='';
         const bosses = Object.keys(state.data.bossParticipation||{}).sort((a,b)=>a.localeCompare(b));
         bosses.forEach(b=>{
-          const el=document.createElement('span'); el.className='chip'; el.textContent=b;
-          el.onclick=()=>{ if(state.selectedBosses.has(b)) state.selectedBosses.delete(b); else state.selectedBosses.add(b); el.classList.toggle('sel'); buildChips();
-        buildPlayerList(); };
+          const el=document.createElement('span'); 
+          el.className='chip' + (state.selectedBosses.has(b) ? ' sel' : ''); 
+          el.textContent=b;
+          el.onclick=()=>{ 
+            if(state.selectedBosses.has(b)) state.selectedBosses.delete(b); 
+            else state.selectedBosses.add(b); 
+            buildChips();
+            buildPlayerList(); 
+          };
           holder.appendChild(el);
         });
       }
+      
       function buildPlayerList(){
         const wrap = document.getElementById('content');
-        wrap.innerHTML = ''; // rebuild
+        wrap.innerHTML = '';
         const cutoff = state.cutoff;
         const eventsAll = state.data.events;
         const pullsMap = state.data.pullParticipation;
@@ -90,12 +91,38 @@
           return;
         }
 
+        // Calculate outliers per boss
+        const outliersByBoss = {};
+        for (const boss of Object.keys(bossPart)) {
+          if (!bossPass(boss)) continue;
+          const rates = [];
+          for (const player of Object.keys(bossPart[boss])) {
+            const bossPulls = bossPart[boss][player].length;
+            const bossDeaths = (eventsAll[player] || []).filter(ev => ev.boss === boss && ev.rankWithinPull <= cutoff).length;
+            if (bossPulls > 0) {
+              rates.push(bossDeaths / bossPulls * 100);
+            }
+          }
+          const medRate = median(rates);
+          const threshold = medRate * 1.5;
+          
+          outliersByBoss[boss] = new Set();
+          for (const player of Object.keys(bossPart[boss])) {
+            const bossPulls = bossPart[boss][player].length;
+            const bossDeaths = (eventsAll[player] || []).filter(ev => ev.boss === boss && ev.rankWithinPull <= cutoff).length;
+            const playerRate = bossPulls > 0 ? (bossDeaths / bossPulls * 100) : 0;
+            if (playerRate > threshold && playerRate > 0) {
+              outliersByBoss[boss].add(player);
+            }
+          }
+        }
+
         for (const [player,totalCounted,totalPulls,rate] of stats){
-          const details = document.createElement('details'); // collapsed by default
+          const details = document.createElement('details');
           const summary = document.createElement('summary');
           summary.innerHTML = `${player} — <span class='muted'>${totalCounted} counted death(s) / ${totalPulls} pulls</span> <span class='rate'>· ${rate.toFixed(1)}%</span>`;
           details.appendChild(summary);
-          // lazy build when opened
+          
           details.addEventListener('toggle', () => {
             if (!details.open || details.dataset.built) return;
             details.dataset.built = '1';
@@ -103,27 +130,26 @@
             table.innerHTML = "<thead><tr><th>Boss</th><th>Pull #</th><th>Outcome</th><th>Phase</th><th>Date/Time</th><th>Report</th><th>Rank</th></tr></thead><tbody></tbody>";
             const tbody = table.querySelector('tbody');
 
-            // group by boss
             const rows = (eventsAll[player].filter(ev => ev.rankWithinPull<=cutoff))
               .sort((a,b)=> (a.absTs-b.absTs) || (a.pullNo-b.pullNo));
             const byBoss = {};
             for (const ev of rows){ (byBoss[ev.boss] ||= []).push(ev); }
 
             for (const boss of Object.keys(byBoss).sort((a,b)=> a.localeCompare(b))){
-            if (!bossPass(boss)) continue;
-            if(!bossPass(boss)) continue;
+              if (!bossPass(boss)) continue;
               const bossRows = byBoss[boss];
               const bossPulls = new Set((bossPart[boss] && bossPart[boss][player]) || []).size;
               const bossDeaths = bossRows.length;
               const bossRate = bossPulls>0 ? (bossDeaths/bossPulls*100) : 0;
+              
+              const isOutlier = outliersByBoss[boss] && outliersByBoss[boss].has(player);
+              const outlierBadge = isOutlier ? '<span class="outlier-badge">OUTLIER</span>' : '';
+              
               const trH = document.createElement('tr');
               trH.className = 'bossh';
-              trH.innerHTML = `<td colspan="7">${boss} — ${bossDeaths} counted death(s) / ${bossPulls} pulls · <span class='rate'>${bossRate.toFixed(1)}%</span></td>`;
+              trH.innerHTML = `<td colspan="7">${boss} — ${bossDeaths} counted death(s) / ${bossPulls} pulls · <span class='rate'>${bossRate.toFixed(1)}%</span>${outlierBadge}</td>`;
               tbody.appendChild(trH);
 
-              // (Mechanic/Ability table removed)
-
-              // rows
               for (const ev of bossRows){
                 const tr = document.createElement('tr');
                 const link = `https://www.warcraftlogs.com/reports/${ev.reportId}?fight=${ev.fightId}&type=deaths&cutoff=${cutoff}`;
@@ -145,8 +171,6 @@
       }
 
       async function bootstrap(){
-        initTheme();
-        // cutoff restore
         const urlCo = (location.hash.match(/co=(\d+)/)||[])[1];
         const saved = localStorage.getItem('raidReportCutoff');
         state.cutoff = parseInt(urlCo || saved || '2', 10);
@@ -157,7 +181,6 @@
         document.getElementById('meta').innerHTML =
           `Authors: ${(state.data.meta.authorFilters||[]).join('; ') || 'All'} · Date ≤ ${state.data.meta.dateCutoff} · Zone=${state.data.meta.zone} · Diff=${state.data.meta.difficulty} · Generated ${state.data.meta.generatedAt}`;
 
-        // single dropdown control: "X Deaths"
         const select = document.getElementById('cutoffSelect');
         for (let i=1;i<=state.data.meta.maxCutoff;i++){
           const opt=document.createElement('option'); 
@@ -170,8 +193,7 @@
           state.cutoff = parseInt(e.target.value,10); 
           localStorage.setItem('raidReportCutoff', String(state.cutoff)); 
           history.replaceState(null,'',`#co=${state.cutoff}`); 
-          buildChips();
-        buildPlayerList(); 
+          buildPlayerList(); 
         };
 
         buildChips();
@@ -186,7 +208,6 @@
       <h1>Counted Deaths Report</h1>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <div id="bossChips" class="chips"></div>
-        <button id="toggle" class="toggle">Toggle Light/Dark</button>
         <label for="cutoffSelect" class="muted">Deaths:</label>
         <select id="cutoffSelect" class="select"></select>
       </div>
