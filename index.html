@@ -168,7 +168,7 @@
               
               const trH = document.createElement('tr');
               trH.className = 'bossh';
-              trH.innerHTML = `<td colspan="7">${boss} — ${bossDeaths} counted death(s) / ${bossPulls} pulls · <span class='rate'>${bossRate.toFixed(1)}%</span>${outlierBadge}</td>`;
+              trH.innerHTML = `<td colspan="8">${boss} — ${bossDeaths} counted death(s) / ${bossPulls} pulls · <span class='rate'>${bossRate.toFixed(1)}%</span>${outlierBadge}</td>`;
               tbody.appendChild(trH);
 
               for (const ev of bossRows){
