@@ -40,9 +40,6 @@
       .chip{background:var(--chip);border:1px solid var(--chipbrd);padding:4px 8px;border-radius:999px;cursor:pointer;user-select:none}
       .chip.sel{outline:2px solid var(--link)}
       .search-box{background:var(--panel);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:8px;min-width:200px}
-      .shame-section{background:var(--badbg);border:2px solid var(--badbrd);border-radius:10px;padding:12px;margin-bottom:16px}
-      .shame-title{color:var(--bad);font-weight:700;font-size:16px;margin-bottom:8px}
-      .shame-item{background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:6px}
       .ability-table{font-size:13px;margin:8px 0}
       .ability-table td{padding:4px 8px}
       a{color:var(--link);text-decoration:none} a:hover{color:var(--linkhover);text-decoration:underline}
@@ -68,62 +65,9 @@
             if(state.selectedBosses.has(b)) state.selectedBosses.delete(b); 
             else state.selectedBosses.add(b); 
             buildChips();
-            buildHallOfShame();
             buildPlayerList(); 
           };
           holder.appendChild(el);
-        });
-      }
-      
-      function buildHallOfShame(){
-        const holder = document.getElementById('hallOfShame');
-        if (!holder) return;
-        
-        const cutoff = state.cutoff;
-        const eventsAll = state.data.events;
-        
-        // Group deaths by pull (reportId_fightId)
-        const pullDeaths = {};
-        for (const player of Object.keys(eventsAll)) {
-          for (const ev of eventsAll[player]) {
-            if (ev.rankWithinPull > cutoff || !bossPass(ev.boss)) continue;
-            const pullKey = `${ev.reportId}_${ev.fightId}`;
-            if (!pullDeaths[pullKey]) {
-              pullDeaths[pullKey] = {
-                reportId: ev.reportId,
-                fightId: ev.fightId,
-                boss: ev.boss,
-                pullNo: ev.pullNo,
-                isKill: ev.isKill,
-                deaths: []
-              };
-            }
-            pullDeaths[pullKey].deaths.push({player: ev.player, rank: ev.rankWithinPull, ability: ev.abilityName});
-          }
-        }
-        
-        // Sort by death count
-        const sorted = Object.values(pullDeaths).sort((a,b) => b.deaths.length - a.deaths.length).slice(0,5);
-        
-        if (sorted.length === 0) {
-          holder.style.display = 'none';
-          return;
-        }
-        
-        holder.style.display = 'block';
-        holder.innerHTML = '<div class="shame-title">🔥 Hall of Shame - Worst Pulls</div>';
-        
-        sorted.forEach((pull,idx) => {
-          const pill = pull.isKill ? "<span class='pill kill'>KILL</span>" : "<span class='pill wipe'>wipe</span>";
-          const link = `https://www.warcraftlogs.com/reports/${pull.reportId}?fight=${pull.fightId}&type=deaths`;
-          const item = document.createElement('div');
-          item.className = 'shame-item';
-          item.innerHTML = `
-            <strong>#${idx+1}</strong> ${pull.boss} Pull ${pull.pullNo} ${pill} - <strong>${pull.deaths.length}</strong> counted deaths
-            <br><span class='muted'>${pull.deaths.map(d => d.player).join(', ')}</span>
-            <br><a href="${link}" target="_blank" rel="noopener">View Report →</a>
-          `;
-          holder.appendChild(item);
         });
       }
       
@@ -270,7 +214,6 @@
           state.cutoff = parseInt(e.target.value,10); 
           localStorage.setItem('raidReportCutoff', String(state.cutoff)); 
           history.replaceState(null,'',`#co=${state.cutoff}`); 
-          buildHallOfShame();
           buildPlayerList(); 
         };
 
@@ -282,7 +225,6 @@
         };
 
         buildChips();
-        buildHallOfShame();
         buildPlayerList();
       }
       window.addEventListener('DOMContentLoaded', bootstrap);
@@ -300,7 +242,6 @@
       </div>
     </div>
     <div id="meta" class="sub"></div>
-    <div id="hallOfShame" class="shame-section"></div>
     <div id="content"></div>
   </div>
 </body></html>
