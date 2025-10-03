@@ -39,7 +39,7 @@
       a{color:var(--link);text-decoration:none} a:hover{color:var(--linkhover);text-decoration:underline}
     </style>
     <script>
-      const state = { data:null, cutoff:2, theme:null, selectedBosses:new Set() };
+      const state = { data:null, cutoff:2, theme:null, selectedBoss:null };
 
       function setTheme(light){
         document.body.classList.toggle('light', !!light);
@@ -53,7 +53,7 @@
       }
       function fmt(ts){ try{ const d=new Date(ts); return isFinite(d)? d.toISOString().replace('T',' ').slice(0,19) : '—'; }catch(e){return '—'} }
 
-      function bossPass(name){ return state.selectedBosses.size===0 || state.selectedBosses.has(name); }
+      function bossPass(name){ return !state.selectedBoss || state.selectedBoss===name; }
       function median(values){ if(!values.length) return 0; values=[...values].sort((a,b)=>a-b); const mid=Math.floor(values.length/2); return values.length%2?values[mid]:(values[mid-1]+values[mid])/2; }
       function buildChips(){
         const holder = document.getElementById('bossChips'); if(!holder) return;
@@ -100,7 +100,7 @@
             if (!details.open || details.dataset.built) return;
             details.dataset.built = '1';
             const table = document.createElement('table');
-            table.innerHTML = "<thead><tr><th>Boss</th><th>Pull #</th><th>Outcome</th><th>Phase</th><th>Date/Time</th><th>Killing Blow</th><th>Report</th><th>Rank</th></tr></thead><tbody></tbody>";
+            table.innerHTML = "<thead><tr><th>Boss</th><th>Pull #</th><th>Outcome</th><th>Phase</th><th>Date/Time</th><th>Report</th><th>Rank</th></tr></thead><tbody></tbody>";
             const tbody = table.querySelector('tbody');
 
             // group by boss
@@ -110,6 +110,7 @@
             for (const ev of rows){ (byBoss[ev.boss] ||= []).push(ev); }
 
             for (const boss of Object.keys(byBoss).sort((a,b)=> a.localeCompare(b))){
+            if (!bossPass(boss)) continue;
             if(!bossPass(boss)) continue;
               const bossRows = byBoss[boss];
               const bossPulls = new Set((bossPart[boss] && bossPart[boss][player]) || []).size;
@@ -134,7 +135,7 @@
 
             const trT = document.createElement('tr');
             trT.className = 'totals';
-            trT.innerHTML = `<td colspan="8">Player total: ${totalCounted} counted death(s) / ${totalPulls} pulls · <span class='rate'>${rate.toFixed(1)}%</span></td>`;
+            trT.innerHTML = `<td colspan="7">Player total: ${totalCounted} counted death(s) / ${totalPulls} pulls · <span class='rate'>${rate.toFixed(1)}%</span></td>`;
             tbody.appendChild(trT);
             details.appendChild(table);
           }, {once:true});
