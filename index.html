@@ -146,6 +146,7 @@
           details.appendChild(summary);
           
           details.addEventListener('toggle', () => {
+            console.log('Player expanded:', player, 'Built:', details.dataset.built);
             if (!details.open || details.dataset.built) return;
             details.dataset.built = '1';
             const table = document.createElement('table');
