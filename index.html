@@ -72,7 +72,6 @@
       }
       
       function buildPlayerList(){
-        console.log('buildPlayerList called, cutoff:', state.cutoff);
         const wrap = document.getElementById('content');
         wrap.innerHTML = '';
         const cutoff = state.cutoff;
@@ -146,19 +145,16 @@
           details.appendChild(summary);
           
           details.addEventListener('toggle', () => {
-            console.log('Player expanded:', player, 'Built:', details.dataset.built);
             if (!details.open || details.dataset.built) return;
             details.dataset.built = '1';
             const table = document.createElement('table');
-            table.innerHTML = "<thead><tr><th>Boss</th><th>Pull #</th><th>Outcome</th><th>Phase</th><th>Date/Time</th><th>Report</th><th>Rank</th></tr></thead><tbody></tbody>";
+            table.innerHTML = "<thead><tr><th>Boss</th><th>Pull #</th><th>Outcome</th><th>Phase</th><th>Killing Blow</th><th>Date/Time</th><th>Report</th><th>Rank</th></tr></thead><tbody></tbody>";
             const tbody = table.querySelector('tbody');
 
             const rows = (eventsAll[player].filter(ev => ev.rankWithinPull<=cutoff))
               .sort((a,b)=> (a.absTs-b.absTs) || (a.pullNo-b.pullNo));
             const byBoss = {};
             for (const ev of rows){ (byBoss[ev.boss] ||= []).push(ev); }
-
-            console.log('Bosses for', player, ':', Object.keys(byBoss), 'Total rows:', rows.length);
 
             for (const boss of Object.keys(byBoss).sort((a,b)=> a.localeCompare(b))){
               if (!bossPass(boss)) continue;
@@ -186,7 +182,7 @@
 
             const trT = document.createElement('tr');
             trT.className = 'totals';
-            trT.innerHTML = `<td colspan="7">Player total: ${totalCounted} counted death(s) / ${totalPulls} pulls · <span class='rate'>${rate.toFixed(1)}%</span></td>`;
+            trT.innerHTML = `<td colspan="8">Player total: ${totalCounted} counted death(s) / ${totalPulls} pulls · <span class='rate'>${rate.toFixed(1)}%</span></td>`;
             tbody.appendChild(trT);
             details.appendChild(table);
           }, {once:true});
