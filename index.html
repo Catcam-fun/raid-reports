@@ -158,6 +158,8 @@
             const byBoss = {};
             for (const ev of rows){ (byBoss[ev.boss] ||= []).push(ev); }
 
+            console.log('Bosses for', player, ':', Object.keys(byBoss), 'Total rows:', rows.length);
+
             for (const boss of Object.keys(byBoss).sort((a,b)=> a.localeCompare(b))){
               if (!bossPass(boss)) continue;
               const bossRows = byBoss[boss];
