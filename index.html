@@ -65,6 +65,40 @@
       function playerMatchesSearch(name){ return !state.searchQuery || name.toLowerCase().includes(state.searchQuery.toLowerCase()); }
       function median(values){ if(!values.length) return 0; values=[...values].sort((a,b)=>a-b); const mid=Math.floor(values.length/2); return values.length%2?values[mid]:(values[mid-1]+values[mid])/2; }
       
+      function calculateTrend(player, boss, cutoff) {
+        const eventsAll = state.data.events;
+        const bossPart = state.data.bossParticipation;
+        
+        const bossPulls = (bossPart[boss] && bossPart[boss][player]) ? bossPart[boss][player].length : 0;
+        if (bossPulls < 5) return null; // Need at least 5 pulls
+        
+        const allEvents = (eventsAll[player] || []).filter(ev => ev.boss === boss && ev.rankWithinPull <= cutoff);
+        if (allEvents.length === 0) return null;
+        
+        // Sort by pull number
+        const sorted = allEvents.sort((a, b) => a.pullNo - b.pullNo);
+        const pullNums = sorted.map(e => e.pullNo);
+        const minPull = Math.min(...pullNums);
+        const maxPull = Math.max(...pullNums);
+        const midPull = minPull + (maxPull - minPull) / 2;
+        
+        // Split into early and late
+        const earlyDeaths = sorted.filter(e => e.pullNo <= midPull).length;
+        const lateDeaths = sorted.filter(e => e.pullNo > midPull).length;
+        
+        const earlyPulls = Math.floor(bossPulls / 2);
+        const latePulls = bossPulls - earlyPulls;
+        
+        const earlyRate = earlyPulls > 0 ? (earlyDeaths / earlyPulls * 100) : 0;
+        const lateRate = latePulls > 0 ? (lateDeaths / latePulls * 100) : 0;
+        
+        const diff = lateRate - earlyRate;
+        
+        if (Math.abs(diff) < 5) return { type: 'stable', symbol: '→', class: 'trend-flat' };
+        if (diff < 0) return { type: 'improving', symbol: '↓', class: 'trend-down' };
+        return { type: 'declining', symbol: '↑', class: 'trend-up' };
+      }
+      
       function hasAlts(player) {
         const charGroups = state.data.meta.characterGroups || {};
         return charGroups[player] && charGroups[player].length > 0;
@@ -314,9 +348,13 @@
               const isOutlier = outliersByBoss[boss] && outliersByBoss[boss].has(player);
               const outlierBadge = isOutlier ? '<span class="outlier-badge">OUTLIER</span>' : '';
               
+              // Calculate trend
+              const trend = calculateTrend(player, boss, cutoff);
+              const trendDisplay = trend ? `<span class="trend ${trend.class}" title="${trend.type}">${trend.symbol}</span>` : '';
+              
               const trH = document.createElement('tr');
               trH.className = 'bossh';
-              trH.innerHTML = `<td colspan="9">${boss} — ${bossDeaths} counted death(s) / ${bossPulls} pulls · <span class='rate'>${bossRate.toFixed(1)}%</span>${outlierBadge}</td>`;
+              trH.innerHTML = `<td colspan="9">${boss} — ${bossDeaths} counted death(s) / ${bossPulls} pulls · <span class='rate'>${bossRate.toFixed(1)}%${trendDisplay}</span>${outlierBadge}</td>`;
               tbody.appendChild(trH);
 
               for (const ev of bossRows){
@@ -364,6 +402,7 @@
           state.cutoff = parseInt(e.target.value,10); 
           localStorage.setItem('raidReportCutoff', String(state.cutoff)); 
           history.replaceState(null,'',`#co=${state.cutoff}`); 
+          buildOverviewTable();
           buildPlayerList(); 
         };
 
