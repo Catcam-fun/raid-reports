@@ -17,6 +17,10 @@
       body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;line-height:1.5;padding:24px}
       .wrap{max-width:1100px;margin:0 auto}
       h1{margin:0 0 8px}
+      .nav-links{display:flex;gap:12px;margin-bottom:20px}
+      .nav-links a{background:var(--panel);border:1px solid var(--border);padding:8px 16px;border-radius:8px;text-decoration:none;color:var(--text);font-weight:600}
+      .nav-links a:hover{background:var(--panel2);color:var(--link)}
+      .nav-links a.active{background:var(--link);color:var(--bg)}
       .topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px}
       .sub{color:var(--muted);margin:6px 0 12px}
       .toggle,.select{background:var(--panel);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:8px}
@@ -366,6 +370,10 @@
     </head>
 <body>
   <div class="wrap">
+    <div class="nav-links">
+      <a href="index.html" class="active">Death Report</a>
+      <a href="performance.html">Performance Analysis</a>
+    </div>
     <div class="topbar">
       <h1>Counted Deaths Report</h1>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
