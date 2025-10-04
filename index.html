@@ -65,6 +65,16 @@
       function playerMatchesSearch(name){ return !state.searchQuery || name.toLowerCase().includes(state.searchQuery.toLowerCase()); }
       function median(values){ if(!values.length) return 0; values=[...values].sort((a,b)=>a-b); const mid=Math.floor(values.length/2); return values.length%2?values[mid]:(values[mid-1]+values[mid])/2; }
       
+      function hasAlts(player) {
+        const charGroups = state.data.meta.characterGroups || {};
+        return charGroups[player] && charGroups[player].length > 0;
+      }
+      
+      function getPlayerAlts(player) {
+        const charGroups = state.data.meta.characterGroups || {};
+        return charGroups[player] || [];
+      }
+      
       function buildChips(){
         const holder = document.getElementById('bossChips'); if(!holder) return;
         holder.innerHTML='';
@@ -100,21 +110,9 @@
           return;
         }
         
-        // Calculate all rates first to get median
-        const allRates = [];
-        players.forEach(player => {
-          bosses.forEach(boss => {
-            const bossPulls = (bossPart[boss] && bossPart[boss][player]) ? bossPart[boss][player].length : 0;
-            const bossDeaths = (eventsAll[player] || []).filter(ev => ev.boss === boss && ev.rankWithinPull <= cutoff).length;
-            if (bossPulls > 0) {
-              allRates.push((bossDeaths / bossPulls * 100));
-            }
-          });
-        });
-        
-        const medianRate = median(allRates);
-        const lowThreshold = medianRate * 0.75;
-        const highThreshold = medianRate * 1.5;
+        // Fixed thresholds for death rates
+        const lowThreshold = 9.5;
+        const highThreshold = 14;
         
         holder.style.display = 'block';
         const table = document.createElement('table');
@@ -194,6 +192,7 @@
         const eventsAll = state.data.events;
         const pullsMap = state.data.pullParticipation;
         const bossPart = state.data.bossParticipation;
+        const charBreakdown = state.data.characterBreakdown || {};
 
         // compute per-player stats for this cutoff
         const stats = [];
@@ -257,14 +256,47 @@
           
           const details = document.createElement('details');
           const summary = document.createElement('summary');
-          summary.innerHTML = `${player} — <span class='muted'>${totalCounted} counted death(s) / ${totalPulls} pulls</span> <span class='rate'>· ${rate.toFixed(1)}%</span>`;
+          const altIndicator = hasAlts(player) ? ' <span class="muted">(grouped)</span>' : '';
+          summary.innerHTML = `${player}${altIndicator} — <span class='muted'>${totalCounted} counted death(s) / ${totalPulls} pulls</span> <span class='rate'>· ${rate.toFixed(1)}%</span>`;
           details.appendChild(summary);
           
           details.addEventListener('toggle', () => {
             if (!details.open || details.dataset.built) return;
             details.dataset.built = '1';
+            
+            // If player has alts, show character breakdown first
+            if (hasAlts(player)) {
+              const charDetails = document.createElement('details');
+              charDetails.style.marginBottom = '12px';
+              charDetails.style.marginLeft = '16px';
+              const charSummary = document.createElement('summary');
+              charSummary.innerHTML = '<strong>📊 Character Breakdown</strong>';
+              charDetails.appendChild(charSummary);
+              
+              const charTable = document.createElement('table');
+              charTable.style.fontSize = '13px';
+              charTable.innerHTML = '<thead><tr><th>Character</th><th>Deaths</th><th>Rate</th></tr></thead><tbody></tbody>';
+              const charTbody = charTable.querySelector('tbody');
+              
+              const chars = charBreakdown[player] || {};
+              const alts = [player, ...getPlayerAlts(player)].filter(c => chars[c] && chars[c].length > 0);
+              
+              for (const char of alts) {
+                const charEvs = (chars[char] || []).filter(ev => ev.rankWithinPull <= cutoff && bossPass(ev.boss));
+                const charDeaths = charEvs.length;
+                const charRate = totalPulls > 0 ? (charDeaths / totalPulls * 100) : 0;
+                
+                const tr = document.createElement('tr');
+                tr.innerHTML = `<td><strong>${char}</strong></td><td>${charDeaths}</td><td>${charRate.toFixed(1)}%</td>`;
+                charTbody.appendChild(tr);
+              }
+              
+              charDetails.appendChild(charTable);
+              details.appendChild(charDetails);
+            }
+            
             const table = document.createElement('table');
-            table.innerHTML = "<thead><tr><th>Boss</th><th>Pull #</th><th>Outcome</th><th>Phase</th><th>Killing Blow</th><th>Date/Time</th><th>Report</th><th>Rank</th></tr></thead><tbody></tbody>";
+            table.innerHTML = "<thead><tr><th>Boss</th><th>Pull #</th><th>Outcome</th><th>Phase</th><th>Character</th><th>Killing Blow</th><th>Date/Time</th><th>Report</th><th>Rank</th></tr></thead><tbody></tbody>";
             const tbody = table.querySelector('tbody');
 
             const rows = (eventsAll[player].filter(ev => ev.rankWithinPull<=cutoff))
@@ -284,21 +316,23 @@
               
               const trH = document.createElement('tr');
               trH.className = 'bossh';
-              trH.innerHTML = `<td colspan="8">${boss} — ${bossDeaths} counted death(s) / ${bossPulls} pulls · <span class='rate'>${bossRate.toFixed(1)}%</span>${outlierBadge}</td>`;
+              trH.innerHTML = `<td colspan="9">${boss} — ${bossDeaths} counted death(s) / ${bossPulls} pulls · <span class='rate'>${bossRate.toFixed(1)}%</span>${outlierBadge}</td>`;
               tbody.appendChild(trH);
 
               for (const ev of bossRows){
                 const tr = document.createElement('tr');
                 const link = `https://www.warcraftlogs.com/reports/${ev.reportId}?fight=${ev.fightId}&type=deaths&cutoff=${cutoff}`;
                 const pill = ev.isKill ? "<span class='pill kill'>KILL</span>" : "<span class='pill wipe'>wipe</span>";
-                tr.innerHTML = `<td>${boss}</td><td>${ev.pullNo}</td><td>${pill}</td><td>${ev.phase}</td><td class='mono'>${fmt(ev.absTs)}</td><td><a target="_blank" rel="noopener" href="${link}">${ev.reportId}<span class='muted'>#${ev.fightId}</span></a></td><td>${ev.rankWithinPull}</td>`;
+                const charName = ev.originalCharacter || ev.player;
+                const charDisplay = charName !== player ? `<span class='muted'>${charName}</span>` : '—';
+                tr.innerHTML = `<td>${boss}</td><td>${ev.pullNo}</td><td>${pill}</td><td>${ev.phase}</td><td>${charDisplay}</td><td>${ev.abilityName}</td><td class='mono'>${fmt(ev.absTs)}</td><td><a target="_blank" rel="noopener" href="${link}">${ev.reportId}<span class='muted'>#${ev.fightId}</span></a></td><td>${ev.rankWithinPull}</td>`;
                 tbody.appendChild(tr);
               }
             }
 
             const trT = document.createElement('tr');
             trT.className = 'totals';
-            trT.innerHTML = `<td colspan="8">Player total: ${totalCounted} counted death(s) / ${totalPulls} pulls · <span class='rate'>${rate.toFixed(1)}%</span></td>`;
+            trT.innerHTML = `<td colspan="9">Player total: ${totalCounted} counted death(s) / ${totalPulls} pulls · <span class='rate'>${rate.toFixed(1)}%</span></td>`;
             tbody.appendChild(trT);
             details.appendChild(table);
           }, {once:true});
@@ -359,8 +393,8 @@
       </div>
     </div>
     <div id="meta" class="sub"></div>
-    <details class="overview-table" open>
-      <summary style="font-weight:700;margin-bottom:12px">📊 All Bosses Overview (click to collapse)</summary>
+    <details class="overview-table">
+      <summary style="font-weight:700;margin-bottom:12px">📊 All Bosses Overview (click to expand)</summary>
       <div id="overviewTable"></div>
     </details>
     <div id="content"></div>
