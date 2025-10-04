@@ -7,13 +7,11 @@
         --goodbg:#063f2e; --good:#34d399; --goodbrd:#065f46;
         --badbg:#3b0d0d; --bad:#f87171; --badbrd:#7f1d1d;
         --bossh:#141a29; --totals:#3a2f0a; --totalsbrd:#b45309; --chip:#1f2937; --chipbrd:#374151;
-        --outlier:#dc2626; --outlierbg:#450a0a;
       }
       body.light {
         --bg:#fff; --panel:#f9fafb; --panel2:#fff; --border:#e5e7eb; --text:#111827; --muted:#6b7280;
         --link:#1d4ed8; --linkhover:#1e40af; --goodbg:#e6ffed; --good:#047857; --goodbrd:#a7f3d0;
         --badbg:#fee2e2; --bad:#991b1b; --badbrd:#fecaca; --bossh:#eef2ff; --totals:#fef3c7; --totalsbrd:#f59e0b; --chip:#e5e7eb; --chipbrd:#d1d5db;
-        --outlier:#dc2626; --outlierbg:#fef2f2;
       }
       html,body{margin:0;padding:0}
       body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;line-height:1.5;padding:24px}
@@ -31,7 +29,6 @@
       .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:600;border:1px solid}
       .kill{background:var(--goodbg);color:var(--good);border-color:var(--goodbrd)}
       .wipe{background:var(--badbg);color:var(--bad);border-color:var(--badbrd)}
-      .outlier-badge{background:var(--outlierbg);color:var(--outlier);font-size:11px;padding:2px 6px;border-radius:4px;font-weight:700;margin-left:6px}
       .muted{color:var(--muted)}
       .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
       .bossh{background:var(--bossh);font-weight:600}
@@ -45,9 +42,6 @@
       .overview-table th{cursor:pointer;user-select:none}
       .overview-table th:hover{background:var(--border)}
       .rate-cell{text-align:center;font-weight:600}
-      .rate-low{background:#063f2e;color:#34d399}
-      .rate-med{background:#3a2f0a;color:#fbbf24}
-      .rate-high{background:#3b0d0d;color:#f87171}
       a{color:var(--link);text-decoration:none} a:hover{color:var(--linkhover);text-decoration:underline}
     </style>
     <script>
@@ -104,10 +98,6 @@
           return;
         }
         
-        // Fixed thresholds for death rates
-        const lowThreshold = 9.5;
-        const highThreshold = 14;
-        
         holder.style.display = 'block';
         const table = document.createElement('table');
         const thead = document.createElement('thead');
@@ -135,9 +125,6 @@
               td.style.opacity = '0.4';
             } else {
               td.textContent = rate.toFixed(1) + '%';
-              if (rate < lowThreshold) td.className += ' rate-low';
-              else if (rate < highThreshold) td.className += ' rate-med';
-              else td.className += ' rate-high';
             }
             tr.appendChild(td);
           });
@@ -149,9 +136,6 @@
           const totalDeaths = (eventsAll[player] || []).filter(ev => ev.rankWithinPull <= cutoff).length;
           const overallRate = totalPulls > 0 ? (totalDeaths / totalPulls * 100) : 0;
           overallTd.innerHTML = `<strong>${overallRate.toFixed(1)}%</strong>`;
-          if (overallRate < lowThreshold) overallTd.className += ' rate-low';
-          else if (overallRate < highThreshold) overallTd.className += ' rate-med';
-          else overallTd.className += ' rate-high';
           tr.appendChild(overallTd);
           
           tbody.appendChild(tr);
@@ -219,32 +203,6 @@
           return;
         }
 
-        // Calculate outliers per boss
-        const outliersByBoss = {};
-        for (const boss of Object.keys(bossPart)) {
-          if (!bossPass(boss)) continue;
-          const rates = [];
-          for (const player of Object.keys(bossPart[boss])) {
-            const bossPulls = bossPart[boss][player].length;
-            const bossDeaths = (eventsAll[player] || []).filter(ev => ev.boss === boss && ev.rankWithinPull <= cutoff).length;
-            if (bossPulls > 0) {
-              rates.push(bossDeaths / bossPulls * 100);
-            }
-          }
-          const medRate = median(rates);
-          const threshold = medRate * 1.5;
-          
-          outliersByBoss[boss] = new Set();
-          for (const player of Object.keys(bossPart[boss])) {
-            const bossPulls = bossPart[boss][player].length;
-            const bossDeaths = (eventsAll[player] || []).filter(ev => ev.boss === boss && ev.rankWithinPull <= cutoff).length;
-            const playerRate = bossPulls > 0 ? (bossDeaths / bossPulls * 100) : 0;
-            if (playerRate > threshold && playerRate > 0) {
-              outliersByBoss[boss].add(player);
-            }
-          }
-        }
-
         for (const [player,totalCounted,totalPulls,rate] of stats){
           if (!playerMatchesSearch(player)) continue; // Search filter
           
@@ -276,6 +234,9 @@
               const alts = [player, ...getPlayerAlts(player)].filter(c => chars[c] && chars[c].length > 0);
               
               for (const char of alts) {
+                // Skip if this character name matches the main name (prevents duplicates)
+                if (char === player && getPlayerAlts(player).includes(player)) continue;
+                
                 const charEvs = (chars[char] || []).filter(ev => ev.rankWithinPull <= cutoff && bossPass(ev.boss));
                 const charDeaths = charEvs.length;
                 const charRate = totalPulls > 0 ? (charDeaths / totalPulls * 100) : 0;
@@ -305,12 +266,41 @@
               const bossDeaths = bossRows.length;
               const bossRate = bossPulls>0 ? (bossDeaths/bossPulls*100) : 0;
               
-              const isOutlier = outliersByBoss[boss] && outliersByBoss[boss].has(player);
-              const outlierBadge = isOutlier ? '<span class="outlier-badge">OUTLIER</span>' : '';
+              // Calculate improvement trend (early vs late pulls)
+              let trendIndicator = '';
+              if (bossPulls >= 10) {
+                const sorted = bossRows.sort((a, b) => a.pullNo - b.pullNo);
+                const midPoint = Math.ceil(sorted.length / 2);
+                const earlyDeaths = sorted.slice(0, midPoint);
+                const lateDeaths = sorted.slice(midPoint);
+                
+                const earlyPulls = Math.ceil(bossPulls / 2);
+                const latePulls = bossPulls - earlyPulls;
+                
+                const earlyRate = earlyPulls > 0 ? (earlyDeaths.length / earlyPulls * 100) : 0;
+                const lateRate = latePulls > 0 ? (lateDeaths.length / latePulls * 100) : 0;
+                const improvement = earlyRate - lateRate;
+                
+                if (improvement > 5) {
+                  trendIndicator = '<span style="color:#34d399;margin-left:8px;font-size:11px" title="Death rate improved by ' + improvement.toFixed(1) + '%">📈 Improving</span>';
+                }
+              }
+              
+              // Count abilities for this boss
+              const abilityCounts = {};
+              for (const ev of bossRows) {
+                const ability = ev.abilityName || 'Unknown';
+                abilityCounts[ability] = (abilityCounts[ability] || 0) + 1;
+              }
+              const topAbilities = Object.entries(abilityCounts)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 3)
+                .map(([name, count]) => `${name} (${count})`)
+                .join(' · ');
               
               const trH = document.createElement('tr');
               trH.className = 'bossh';
-              trH.innerHTML = `<td colspan="9">${boss} — ${bossDeaths} counted death(s) / ${bossPulls} pulls · <span class='rate'>${bossRate.toFixed(1)}%</span>${outlierBadge}</td>`;
+              trH.innerHTML = `<td colspan="9">${boss} — ${bossDeaths} counted death(s) / ${bossPulls} pulls · <span class='rate'>${bossRate.toFixed(1)}%</span>${trendIndicator}<br><span class='muted' style='font-weight:normal;font-size:12px'>${topAbilities}</span></td>`;
               tbody.appendChild(trH);
 
               for (const ev of bossRows){
