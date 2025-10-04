@@ -100,6 +100,22 @@
           return;
         }
         
+        // Calculate all rates first to get median
+        const allRates = [];
+        players.forEach(player => {
+          bosses.forEach(boss => {
+            const bossPulls = (bossPart[boss] && bossPart[boss][player]) ? bossPart[boss][player].length : 0;
+            const bossDeaths = (eventsAll[player] || []).filter(ev => ev.boss === boss && ev.rankWithinPull <= cutoff).length;
+            if (bossPulls > 0) {
+              allRates.push((bossDeaths / bossPulls * 100));
+            }
+          });
+        });
+        
+        const medianRate = median(allRates);
+        const lowThreshold = medianRate * 0.75;
+        const highThreshold = medianRate * 1.5;
+        
         holder.style.display = 'block';
         const table = document.createElement('table');
         const thead = document.createElement('thead');
@@ -127,8 +143,8 @@
               td.style.opacity = '0.4';
             } else {
               td.textContent = rate.toFixed(1) + '%';
-              if (rate < 15) td.className += ' rate-low';
-              else if (rate < 30) td.className += ' rate-med';
+              if (rate < lowThreshold) td.className += ' rate-low';
+              else if (rate < highThreshold) td.className += ' rate-med';
               else td.className += ' rate-high';
             }
             tr.appendChild(td);
@@ -141,8 +157,8 @@
           const totalDeaths = (eventsAll[player] || []).filter(ev => ev.rankWithinPull <= cutoff).length;
           const overallRate = totalPulls > 0 ? (totalDeaths / totalPulls * 100) : 0;
           overallTd.innerHTML = `<strong>${overallRate.toFixed(1)}%</strong>`;
-          if (overallRate < 15) overallTd.className += ' rate-low';
-          else if (overallRate < 30) overallTd.className += ' rate-med';
+          if (overallRate < lowThreshold) overallTd.className += ' rate-low';
+          else if (overallRate < highThreshold) overallTd.className += ' rate-med';
           else overallTd.className += ' rate-high';
           tr.appendChild(overallTd);
           
