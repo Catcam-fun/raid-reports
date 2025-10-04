@@ -42,6 +42,18 @@
       .search-box{background:var(--panel);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:8px;min-width:200px}
       .ability-table{font-size:13px;margin:8px 0}
       .ability-table td{padding:4px 8px}
+      .overview-table{margin-bottom:20px}
+      .overview-table table{font-size:13px}
+      .overview-table th{cursor:pointer;user-select:none}
+      .overview-table th:hover{background:var(--border)}
+      .rate-cell{text-align:center;font-weight:600}
+      .rate-low{background:#063f2e;color:#34d399}
+      .rate-med{background:#3a2f0a;color:#fbbf24}
+      .rate-high{background:#3b0d0d;color:#f87171}
+      .trend{font-size:11px;margin-left:4px;opacity:0.7}
+      .trend-up{color:#34d399}
+      .trend-down{color:#f87171}
+      .trend-flat{color:#9aa4b2}
       a{color:var(--link);text-decoration:none} a:hover{color:var(--linkhover);text-decoration:underline}
     </style>
     <script>
@@ -68,6 +80,94 @@
             buildPlayerList(); 
           };
           holder.appendChild(el);
+        });
+      }
+      
+      function buildOverviewTable(){
+        const holder = document.getElementById('overviewTable');
+        if (!holder) return;
+        
+        const cutoff = state.cutoff;
+        const eventsAll = state.data.events;
+        const bossPart = state.data.bossParticipation;
+        const pullsMap = state.data.pullParticipation;
+        
+        const bosses = Object.keys(bossPart).sort((a,b)=>a.localeCompare(b));
+        const players = Object.keys(eventsAll).sort();
+        
+        if (!players.length) {
+          holder.style.display = 'none';
+          return;
+        }
+        
+        holder.style.display = 'block';
+        const table = document.createElement('table');
+        const thead = document.createElement('thead');
+        const headerRow = document.createElement('tr');
+        headerRow.innerHTML = '<th>Player</th>' + bosses.map(b => `<th>${b}</th>`).join('') + '<th>Overall</th>';
+        thead.appendChild(headerRow);
+        table.appendChild(thead);
+        
+        const tbody = document.createElement('tbody');
+        players.forEach(player => {
+          const tr = document.createElement('tr');
+          const playerCell = document.createElement('td');
+          playerCell.innerHTML = `<strong>${player}</strong>`;
+          tr.appendChild(playerCell);
+          
+          bosses.forEach(boss => {
+            const td = document.createElement('td');
+            td.className = 'rate-cell';
+            const bossPulls = (bossPart[boss] && bossPart[boss][player]) ? bossPart[boss][player].length : 0;
+            const bossDeaths = (eventsAll[player] || []).filter(ev => ev.boss === boss && ev.rankWithinPull <= cutoff).length;
+            const rate = bossPulls > 0 ? (bossDeaths / bossPulls * 100) : 0;
+            
+            if (bossPulls === 0) {
+              td.textContent = '—';
+              td.style.opacity = '0.4';
+            } else {
+              td.textContent = rate.toFixed(1) + '%';
+              if (rate < 15) td.className += ' rate-low';
+              else if (rate < 30) td.className += ' rate-med';
+              else td.className += ' rate-high';
+            }
+            tr.appendChild(td);
+          });
+          
+          // Overall column
+          const overallTd = document.createElement('td');
+          overallTd.className = 'rate-cell';
+          const totalPulls = (pullsMap[player] || []).length;
+          const totalDeaths = (eventsAll[player] || []).filter(ev => ev.rankWithinPull <= cutoff).length;
+          const overallRate = totalPulls > 0 ? (totalDeaths / totalPulls * 100) : 0;
+          overallTd.innerHTML = `<strong>${overallRate.toFixed(1)}%</strong>`;
+          if (overallRate < 15) overallTd.className += ' rate-low';
+          else if (overallRate < 30) overallTd.className += ' rate-med';
+          else overallTd.className += ' rate-high';
+          tr.appendChild(overallTd);
+          
+          tbody.appendChild(tr);
+        });
+        table.appendChild(tbody);
+        
+        holder.innerHTML = '';
+        holder.appendChild(table);
+        
+        // Make sortable
+        const headers = thead.querySelectorAll('th');
+        headers.forEach((th, idx) => {
+          th.onclick = () => {
+            const rows = Array.from(tbody.querySelectorAll('tr'));
+            rows.sort((a, b) => {
+              const aCell = a.cells[idx].textContent;
+              const bCell = b.cells[idx].textContent;
+              if (idx === 0) return aCell.localeCompare(bCell); // Name
+              const aVal = parseFloat(aCell) || 0;
+              const bVal = parseFloat(bCell) || 0;
+              return bVal - aVal; // Descending for rates
+            });
+            rows.forEach(row => tbody.appendChild(row));
+          };
         });
       }
       
@@ -171,27 +271,11 @@
               trH.innerHTML = `<td colspan="8">${boss} — ${bossDeaths} counted death(s) / ${bossPulls} pulls · <span class='rate'>${bossRate.toFixed(1)}%</span>${outlierBadge}</td>`;
               tbody.appendChild(trH);
 
-              // Ability frequency table
-              const abilityCount = {};
-              for (const ev of bossRows) {
-                const ability = ev.abilityName || 'Unknown';
-                abilityCount[ability] = (abilityCount[ability] || 0) + 1;
-              }
-              const sortedAbilities = Object.entries(abilityCount).sort((a,b) => b[1] - a[1]).slice(0,5);
-              
-              if (sortedAbilities.length > 0) {
-                const trAbility = document.createElement('tr');
-                trAbility.innerHTML = `<td colspan="8" style="padding:8px 10px;background:var(--panel2)"><div style="font-size:13px;color:var(--muted)"><strong>Top Causes of Death:</strong> ${sortedAbilities.map(([ability, count]) => `${ability} (${count}×)`).join(' · ')}</div></td>`;
-                tbody.appendChild(trAbility);
-              }
-
-              // rows
               for (const ev of bossRows){
                 const tr = document.createElement('tr');
                 const link = `https://www.warcraftlogs.com/reports/${ev.reportId}?fight=${ev.fightId}&type=deaths&cutoff=${cutoff}`;
                 const pill = ev.isKill ? "<span class='pill kill'>KILL</span>" : "<span class='pill wipe'>wipe</span>";
-                const ability = ev.abilityName || 'Unknown';
-                tr.innerHTML = `<td>${boss}</td><td>${ev.pullNo}</td><td>${pill}</td><td>${ev.phase}</td><td>${ability}</td><td class='mono'>${fmt(ev.absTs)}</td><td><a target="_blank" rel="noopener" href="${link}">${ev.reportId}<span class='muted'>#${ev.fightId}</span></a></td><td>${ev.rankWithinPull}</td>`;
+                tr.innerHTML = `<td>${boss}</td><td>${ev.pullNo}</td><td>${pill}</td><td>${ev.phase}</td><td class='mono'>${fmt(ev.absTs)}</td><td><a target="_blank" rel="noopener" href="${link}">${ev.reportId}<span class='muted'>#${ev.fightId}</span></a></td><td>${ev.rankWithinPull}</td>`;
                 tbody.appendChild(tr);
               }
             }
@@ -241,6 +325,7 @@
         };
 
         buildChips();
+        buildOverviewTable();
         buildPlayerList();
       }
       window.addEventListener('DOMContentLoaded', bootstrap);
@@ -258,6 +343,10 @@
       </div>
     </div>
     <div id="meta" class="sub"></div>
+    <details class="overview-table" open>
+      <summary style="font-weight:700;margin-bottom:12px">📊 All Bosses Overview (click to collapse)</summary>
+      <div id="overviewTable"></div>
+    </details>
     <div id="content"></div>
   </div>
 </body></html>
