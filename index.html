@@ -231,12 +231,10 @@
               const charTbody = charTable.querySelector('tbody');
               
               const chars = charBreakdown[player] || {};
-              const alts = [player, ...getPlayerAlts(player)].filter(c => chars[c] && chars[c].length > 0);
+              const playerAlts = getPlayerAlts(player).filter(c => c !== player); // Remove main from alts to prevent duplicates
+              const alts = [player, ...playerAlts].filter(c => chars[c] && chars[c].length > 0);
               
               for (const char of alts) {
-                // Skip if this character name matches the main name (prevents duplicates)
-                if (char === player && getPlayerAlts(player).includes(player)) continue;
-                
                 const charEvs = (chars[char] || []).filter(ev => ev.rankWithinPull <= cutoff && bossPass(ev.boss));
                 const charDeaths = charEvs.length;
                 const charRate = totalPulls > 0 ? (charDeaths / totalPulls * 100) : 0;
