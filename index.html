@@ -17,10 +17,6 @@
       body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;line-height:1.5;padding:24px}
       .wrap{max-width:1100px;margin:0 auto}
       h1{margin:0 0 8px}
-      .nav-links{display:flex;gap:12px;margin-bottom:20px}
-      .nav-links a{background:var(--panel);border:1px solid var(--border);padding:8px 16px;border-radius:8px;text-decoration:none;color:var(--text);font-weight:600}
-      .nav-links a:hover{background:var(--panel2);color:var(--link)}
-      .nav-links a.active{background:var(--link);color:var(--bg)}
       .topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:10px}
       .sub{color:var(--muted);margin:6px 0 12px}
       .toggle,.select{background:var(--panel);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:8px}
@@ -133,6 +129,7 @@
             tr.appendChild(td);
           });
           
+          // Overall column
           const overallTd = document.createElement('td');
           overallTd.className = 'rate-cell';
           const totalPulls = (pullsMap[player] || []).length;
@@ -148,6 +145,7 @@
         holder.innerHTML = '';
         holder.appendChild(table);
         
+        // Make sortable
         const headers = thead.querySelectorAll('th');
         headers.forEach((th, idx) => {
           th.onclick = () => {
@@ -155,10 +153,10 @@
             rows.sort((a, b) => {
               const aCell = a.cells[idx].textContent;
               const bCell = b.cells[idx].textContent;
-              if (idx === 0) return aCell.localeCompare(bCell);
+              if (idx === 0) return aCell.localeCompare(bCell); // Name
               const aVal = parseFloat(aCell) || 0;
               const bVal = parseFloat(bCell) || 0;
-              return bVal - aVal;
+              return bVal - aVal; // Descending for rates
             });
             rows.forEach(row => tbody.appendChild(row));
           };
@@ -174,15 +172,19 @@
         const bossPart = state.data.bossParticipation;
         const charBreakdown = state.data.characterBreakdown || {};
 
+        // compute per-player stats for this cutoff
         const stats = [];
         for (const player of Object.keys(eventsAll)){
           const evs = eventsAll[player].filter(ev => ev.rankWithinPull <= cutoff && bossPass(ev.boss));
           if (!evs.length) continue;
           
+          // Calculate pulls based on selected bosses
           let pulls;
           if (state.selectedBosses.size === 0) {
+            // No filter - use all pulls
             pulls = (pullsMap[player]||[]).length;
           } else {
+            // Count pulls only for selected bosses
             pulls = 0;
             for (const boss of state.selectedBosses) {
               if (bossPart[boss] && bossPart[boss][player]) {
@@ -202,7 +204,7 @@
         }
 
         for (const [player,totalCounted,totalPulls,rate] of stats){
-          if (!playerMatchesSearch(player)) continue;
+          if (!playerMatchesSearch(player)) continue; // Search filter
           
           const details = document.createElement('details');
           const summary = document.createElement('summary');
@@ -214,6 +216,7 @@
             if (!details.open || details.dataset.built) return;
             details.dataset.built = '1';
             
+            // If player has alts, show character breakdown first
             if (hasAlts(player)) {
               const charDetails = document.createElement('details');
               charDetails.style.marginBottom = '12px';
@@ -228,7 +231,7 @@
               const charTbody = charTable.querySelector('tbody');
               
               const chars = charBreakdown[player] || {};
-              const playerAlts = getPlayerAlts(player).filter(c => c !== player);
+              const playerAlts = getPlayerAlts(player).filter(c => c !== player); // Remove main from alts to prevent duplicates
               const alts = [player, ...playerAlts].filter(c => chars[c] && chars[c].length > 0);
               
               for (const char of alts) {
@@ -261,7 +264,7 @@
               const bossDeaths = bossRows.length;
               const bossRate = bossPulls>0 ? (bossDeaths/bossPulls*100) : 0;
               
-              // Calculate improvement trend
+              // Calculate improvement trend (early vs late pulls)
               let trendIndicator = '';
               if (bossPulls >= 10) {
                 const sorted = bossRows.sort((a, b) => a.pullNo - b.pullNo);
@@ -281,6 +284,7 @@
                 }
               }
               
+              // Count abilities for this boss
               const abilityCounts = {};
               for (const ev of bossRows) {
                 const ability = ev.abilityName || 'Unknown';
@@ -346,6 +350,7 @@
           buildPlayerList(); 
         };
 
+        // Search box
         const searchBox = document.getElementById('searchBox');
         searchBox.oninput = e => {
           state.searchQuery = e.target.value;
@@ -361,10 +366,6 @@
     </head>
 <body>
   <div class="wrap">
-    <div class="nav-links">
-      <a href="index.html" class="active">Death Report</a>
-      <a href="performance.html">Testing</a>
-    </div>
     <div class="topbar">
       <h1>Counted Deaths Report</h1>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
