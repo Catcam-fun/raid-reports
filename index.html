@@ -227,6 +227,7 @@
               charDetails.appendChild(charSummary);
               
               const chars = charBreakdown[player] || {};
+              const charBossPart = state.data.characterBossParticipation?.[player] || {};
               const playerAlts = getPlayerAlts(player).filter(c => c !== player);
               const alts = [player, ...playerAlts].filter(c => chars[c] && chars[c].length > 0);
               
@@ -235,12 +236,21 @@
                 const charEvs = (chars[char] || []).filter(ev => ev.rankWithinPull <= cutoff && bossPass(ev.boss));
                 if (charEvs.length === 0) continue;
                 
+                // Calculate total pulls for THIS character across all bosses
+                let charTotalPulls = 0;
+                const charBosses = charBossPart[char] || {};
+                for (const boss of Object.keys(charBosses)) {
+                  if (bossPass(boss)) {
+                    charTotalPulls += (charBosses[boss] || []).length;
+                  }
+                }
+                
                 const charDeaths = charEvs.length;
-                const charRate = totalPulls > 0 ? (charDeaths / totalPulls * 100) : 0;
+                const charRate = charTotalPulls > 0 ? (charDeaths / charTotalPulls * 100) : 0;
                 
                 const charHeader = document.createElement('div');
                 charHeader.className = 'char-header';
-                charHeader.innerHTML = `${char} — <span class='muted' style='font-weight:normal'>${charDeaths} deaths / ${totalPulls} total pulls · ${charRate.toFixed(1)}%</span>`;
+                charHeader.innerHTML = `${char} — <span class='muted' style='font-weight:normal'>${charDeaths} deaths / ${charTotalPulls} total pulls · ${charRate.toFixed(1)}%</span>`;
                 charDetails.appendChild(charHeader);
                 
                 // Group deaths by boss for this character
@@ -259,14 +269,12 @@
                 for (const boss of Object.keys(charByBoss).sort((a,b) => a.localeCompare(b))) {
                   const bossDeaths = charByBoss[boss].length;
                   
-                  // Calculate pulls for THIS character on THIS boss
-                  // We need to check if this character participated in the boss pulls
-                  // For grouped characters, we use the main's participation
-                  const bossPulls = (bossPart[boss] && bossPart[boss][player]) ? bossPart[boss][player].length : 0;
-                  const bossRate = bossPulls > 0 ? (bossDeaths / bossPulls * 100) : 0;
+                  // Get the actual pulls for THIS character on THIS boss
+                  const charBossPulls = (charBossPart[char]?.[boss] || []).length;
+                  const bossRate = charBossPulls > 0 ? (bossDeaths / charBossPulls * 100) : 0;
                   
                   const tr = document.createElement('tr');
-                  tr.innerHTML = `<td><strong>${boss}</strong></td><td>${bossDeaths}</td><td>${bossPulls}</td><td style='font-weight:600'>${bossRate.toFixed(1)}%</td>`;
+                  tr.innerHTML = `<td><strong>${boss}</strong></td><td>${bossDeaths}</td><td>${charBossPulls}</td><td style='font-weight:600'>${bossRate.toFixed(1)}%</td>`;
                   bossTbody.appendChild(tr);
                 }
                 
