@@ -43,6 +43,7 @@
       .overview-table th:hover{background:var(--border)}
       .rate-cell{text-align:center;font-weight:600}
       a{color:var(--link);text-decoration:none} a:hover{color:var(--linkhover);text-decoration:underline}
+      .char-header{margin-top:12px;margin-bottom:8px;font-weight:600;padding:8px;background:var(--panel2);border-radius:6px}
     </style>
     <script>
       const state = { data:null, cutoff:2, theme:null, selectedBosses:new Set(), searchQuery:'' };
@@ -225,26 +226,53 @@
               charSummary.innerHTML = '<strong>📊 Character Breakdown</strong>';
               charDetails.appendChild(charSummary);
               
-              const charTable = document.createElement('table');
-              charTable.style.fontSize = '13px';
-              charTable.innerHTML = '<thead><tr><th>Character</th><th>Deaths</th><th>Rate</th></tr></thead><tbody></tbody>';
-              const charTbody = charTable.querySelector('tbody');
-              
               const chars = charBreakdown[player] || {};
-              const playerAlts = getPlayerAlts(player).filter(c => c !== player); // Remove main from alts to prevent duplicates
+              const playerAlts = getPlayerAlts(player).filter(c => c !== player);
               const alts = [player, ...playerAlts].filter(c => chars[c] && chars[c].length > 0);
               
+              // Build breakdown by character then by boss
               for (const char of alts) {
                 const charEvs = (chars[char] || []).filter(ev => ev.rankWithinPull <= cutoff && bossPass(ev.boss));
+                if (charEvs.length === 0) continue;
+                
                 const charDeaths = charEvs.length;
                 const charRate = totalPulls > 0 ? (charDeaths / totalPulls * 100) : 0;
                 
-                const tr = document.createElement('tr');
-                tr.innerHTML = `<td><strong>${char}</strong></td><td>${charDeaths}</td><td>${charRate.toFixed(1)}%</td>`;
-                charTbody.appendChild(tr);
+                const charHeader = document.createElement('div');
+                charHeader.className = 'char-header';
+                charHeader.innerHTML = `${char} — <span class='muted' style='font-weight:normal'>${charDeaths} deaths / ${totalPulls} total pulls · ${charRate.toFixed(1)}%</span>`;
+                charDetails.appendChild(charHeader);
+                
+                // Group deaths by boss for this character
+                const charByBoss = {};
+                for (const ev of charEvs) {
+                  (charByBoss[ev.boss] ||= []).push(ev);
+                }
+                
+                const bossTable = document.createElement('table');
+                bossTable.style.fontSize = '12px';
+                bossTable.style.marginLeft = '16px';
+                bossTable.style.marginBottom = '12px';
+                bossTable.innerHTML = '<thead><tr><th>Boss</th><th>Deaths</th><th>Pulls</th><th>Rate</th></tr></thead><tbody></tbody>';
+                const bossTbody = bossTable.querySelector('tbody');
+                
+                for (const boss of Object.keys(charByBoss).sort((a,b) => a.localeCompare(b))) {
+                  const bossDeaths = charByBoss[boss].length;
+                  
+                  // Calculate pulls for THIS character on THIS boss
+                  // We need to check if this character participated in the boss pulls
+                  // For grouped characters, we use the main's participation
+                  const bossPulls = (bossPart[boss] && bossPart[boss][player]) ? bossPart[boss][player].length : 0;
+                  const bossRate = bossPulls > 0 ? (bossDeaths / bossPulls * 100) : 0;
+                  
+                  const tr = document.createElement('tr');
+                  tr.innerHTML = `<td><strong>${boss}</strong></td><td>${bossDeaths}</td><td>${bossPulls}</td><td style='font-weight:600'>${bossRate.toFixed(1)}%</td>`;
+                  bossTbody.appendChild(tr);
+                }
+                
+                charDetails.appendChild(bossTable);
               }
               
-              charDetails.appendChild(charTable);
               details.appendChild(charDetails);
             }
             
